@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, ApiError, errorMessage, invalidateSessionRequests, subscribeSessionExpired, USE_MOCKS } from '../api/client';
 import type { Actor, LoginInput, RegisterInput, Team } from '../types';
 
@@ -9,6 +10,8 @@ interface RoleValue {
   team: Team | null;
   teams: Team[];
   loading: boolean;
+  teamLoading: boolean;
+  teamError: string | null;
   error: string | null;
   sessionVersion: number;
   selectActor: (id: string) => void;
@@ -22,10 +25,13 @@ interface RoleValue {
 const RoleContext = createContext<RoleValue | null>(null);
 
 export function RoleProvider({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
   const [actors, setActors] = useState<Actor[]>([]);
   const [actor, setActor] = useState<Actor | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [team, setTeam] = useState<Team | null>(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionVersion, setSessionVersion] = useState(0);
@@ -47,6 +53,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       teamRequest.current++;
       setTeam(null);
       setTeams([]);
+      setTeamLoading(!!next);
+      setTeamError(null);
       setSessionVersion(value => value + 1);
     }
   }, []);
@@ -77,10 +85,14 @@ export function RoleProvider({ children }: { children: ReactNode }) {
           || nextActors.find(item => item.role === 'business') || nextActors[0] || null;
         replaceActor(selected);
         if (!selected) setError('Демо-профили недоступны. Повторите загрузку.');
+        return selected ? { actorId: selected.id, generation: generation.current } : undefined;
       } else {
         try {
           const session = await api.getSession();
-          if (request === generation.current) replaceActor(session.actor);
+          if (request === generation.current) {
+            replaceActor(session.actor);
+            return { actorId: session.actor.id, generation: generation.current };
+          }
         } catch (cause) {
           if (request !== generation.current) return;
           if (cause instanceof ApiError && cause.status === 401 && cause.code === 'LOGIN_REQUIRED') discardSession();
@@ -102,9 +114,58 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     discardSession();
     setError('Сессия изменилась или завершилась. Войдите в аккаунт снова.');
   }), [discardSession]);
+
+
+  const selectActor = useCallback((id: string) => {
+    if (!USE_MOCKS) return;
+    const next = actors.find(item => item.id === id);
+    if (next && next.id !== actorRef.current?.id) replaceActor(next);
+  }, [actors, replaceActor]);
+
+  const refreshTeam = useCallback(async () => {
+    const current = actorRef.current;
+    const request = ++teamRequest.current;
+    if (!current) { setTeam(null); setTeams([]); setTeamLoading(false); setTeamError(null); return; }
+    setTeamLoading(true);
+    setTeamError(null);
+    try {
+      const nextTeams = await api.getTeams();
+      let nextTeam: Team | null = null;
+      if (current.role === 'student') {
+        try { nextTeam = await api.getMyTeam(current.id); }
+        catch (cause) {
+          if (!(cause instanceof ApiError && cause.code === 'TEAM_REQUIRED')) throw cause;
+        }
+      }
+      if (nextTeam && nextTeam.owner_id !== current.id) throw new ApiError('Аккаунт изменился. Обновите страницу, чтобы загрузить профиль своей команды.', 'SESSION_CHANGED', 401);
+      if (request === teamRequest.current && current.id === actorRef.current?.id) {
+        setTeams(nextTeams);
+        setTeam(nextTeam);
+        setError(null);
+      }
+    } catch (cause) {
+      if (request === teamRequest.current && current.id === actorRef.current?.id) {
+        setError(errorMessage(cause));
+        setTeamError(errorMessage(cause));
+      }
+      throw cause;
+    } finally {
+      if (request === teamRequest.current && current.id === actorRef.current?.id) setTeamLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (actor) void refreshTeam().catch(() => { /* Layout displays the error. */ });
+  }, [actor?.id, sessionVersion, pathname, refreshTeam]);
+
   useEffect(() => {
     if (USE_MOCKS) return;
-    const syncSession = () => { void load(true); };
+    const syncSession = () => {
+      if (authPending.current) return;
+      // Read the cookie identity first: never fetch another account's team into this one.
+      void load(true).then(verified => {
+        if (verified && verified.generation === generation.current && verified.actorId === actorRef.current?.id && !authPending.current) return refreshTeam();
+      }).catch(() => { /* Team errors are displayed by the current account. */ });
+    };
     const onFocus = () => { if (document.visibilityState === 'visible') syncSession(); };
     let channel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
@@ -120,40 +181,15 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       channel?.close();
       if (sessionChannel.current === channel) sessionChannel.current = null;
     };
-  }, [load]);
+  }, [load, refreshTeam]);
 
-  const selectActor = useCallback((id: string) => {
-    if (!USE_MOCKS) return;
-    const next = actors.find(item => item.id === id);
-    if (next && next.id !== actorRef.current?.id) replaceActor(next);
-  }, [actors, replaceActor]);
-
-  const refreshTeam = useCallback(async () => {
-    const current = actorRef.current;
-    const request = ++teamRequest.current;
-    if (!current) { setTeam(null); setTeams([]); return; }
-    try {
-      const nextTeams = await api.getTeams();
-      let nextTeam: Team | null = null;
-      if (current.role === 'student') {
-        try { nextTeam = await api.getMyTeam(current.id); }
-        catch (cause) {
-          if (!(cause instanceof ApiError && cause.code === 'TEAM_REQUIRED')) throw cause;
-        }
-      }
-      if (request === teamRequest.current && current.id === actorRef.current?.id) {
-        setTeams(nextTeams);
-        setTeam(nextTeam);
-        setError(null);
-      }
-    } catch (cause) {
-      if (request === teamRequest.current && current.id === actorRef.current?.id) setError(errorMessage(cause));
-      throw cause;
-    }
-  }, []);
-  useEffect(() => {
-    if (actor) void refreshTeam().catch(() => { /* Layout displays the error. */ });
-  }, [actor?.id, sessionVersion, refreshTeam]);
+  const retry = useCallback(() => {
+    if (authPending.current) return;
+    // An existing account retries in the background so dirty forms stay mounted.
+    void load(!!actorRef.current).then(verified => {
+      if (verified && verified.generation === generation.current && verified.actorId === actorRef.current?.id && !authPending.current) return refreshTeam();
+    }).catch(() => { /* refreshTeam already reports errors for the current account. */ });
+  }, [load, refreshTeam]);
 
   const login = useCallback(async (input: LoginInput) => {
     const request = ++generation.current;
@@ -182,7 +218,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     finally { authPending.current = false; }
   }, [clearSession]);
 
-  return <RoleContext.Provider value={{ actor, actors, role: actor?.role || 'business', team, teams, loading, error, sessionVersion, selectActor, refreshTeam, retry: () => { void load(); }, login, register, logout, clearSession }}>{children}</RoleContext.Provider>;
+  return <RoleContext.Provider value={{ actor, actors, role: actor?.role || 'business', team, teams, loading, teamLoading, teamError, error, sessionVersion, selectActor, refreshTeam, retry, login, register, logout, clearSession }}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
