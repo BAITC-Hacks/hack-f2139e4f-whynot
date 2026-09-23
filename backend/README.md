@@ -68,7 +68,25 @@ Copy-Item .env.example .env
 условиями кейса. Она выбирает минимум 3 вопроса по незаполненным полям и переносит
 пользовательские ответы в предложенную карточку. Заглушка не является LLM.
 
-Адаптер настоящей модели реализован через [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md).
+Для OpenAI создайте `backend/.env` из `backend/.env.example`, если файла ещё нет
+(он исключён из Git), и укажите в нём:
+
+```dotenv
+AI_PROVIDER=openai
+OPENAI_API_KEY=ваш_ключ
+OPENAI_MODEL=gpt-4o-mini
+AI_TIMEOUT_SECONDS=30
+```
+
+Перезапустите backend после изменения `.env`. Ключ хранится только на сервере: не добавляйте
+его во frontend, переменные `VITE_*` или Git. Исходное описание и поля карточки отправляются
+в OpenAI Responses API со
+структурированным JSON и `store=false`. В ответе `/assist` будет `provider=openai`, если
+модель успешно вернула вопросы. `GET /health` показывает выбранного провайдера, но не ключ.
+Без ключа или при ошибке API ответ переключается на `provider=stub` с `fallback_reason`.
+
+В качестве локальной альтернативы доступен адаптер
+[Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md).
 Для него нужен отдельно запущенный Ollama с установленной моделью:
 
 ```dotenv

@@ -192,7 +192,7 @@ class AIQuestions(Schema):
 
 
 class AssistView(AIQuestions):
-    provider: Literal["stub", "ollama"]
+    provider: Literal["stub", "ollama", "openai"]
     fallback_reason: str | None = None
     based_on_revision: int
     suggested_card: Card

@@ -45,6 +45,27 @@ def stub_questions(card: Card) -> AIQuestions:
     return AIQuestions(questions=questions)
 
 
+OPENAI_QUESTIONS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "field": {"type": "string", "enum": list(QUESTION_TEXT)},
+                    "question": {"type": "string"},
+                },
+                "required": ["field", "question"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["questions"],
+    "additionalProperties": False,
+}
+
+
 class Assistant:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -67,6 +88,44 @@ class Assistant:
             response.raise_for_status()
             return AIQuestions.model_validate_json(response.json()["response"])
 
+    def openai_questions(self, source: dict) -> AIQuestions:
+        key = self.settings.openai_api_key
+        if key is None or not key.get_secret_value().strip():
+            raise ValueError("OPENAI_API_KEY is required")
+        if not self.settings.openai_model.strip():
+            raise ValueError("OPENAI_MODEL is required")
+        with httpx.Client(timeout=self.settings.ai_timeout_seconds) as client:
+            response = client.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {key.get_secret_value()}"},
+                json={
+                    "model": self.settings.openai_model,
+                    "instructions": SYSTEM_PROMPT,
+                    "input": json.dumps(source, ensure_ascii=False),
+                    "store": False,
+                    "max_output_tokens": 1000,
+                    "text": {
+                        "format": {
+                            "type": "json_schema",
+                            "name": "ai_sana_questions",
+                            "strict": True,
+                            "schema": OPENAI_QUESTIONS_SCHEMA,
+                        }
+                    },
+                },
+            )
+            response.raise_for_status()
+            body = response.json()
+            if body.get("status") != "completed":
+                raise ValueError("OpenAI response was not completed")
+            for item in body.get("output", []):
+                if item.get("type") != "message":
+                    continue
+                for content in item.get("content", []):
+                    if content.get("type") == "output_text":
+                        return AIQuestions.model_validate_json(content["text"])
+            raise ValueError("OpenAI response contained no text")
+
     def assist(
         self, raw_description: str, card: Card, revision: int, payload: AssistInput
     ) -> AssistView:
@@ -80,17 +139,26 @@ class Assistant:
         provider = "stub"
         reason = None
         questions = stub_questions(suggested)
-        if self.settings.ai_provider == "ollama":
+        if self.settings.ai_provider in ("ollama", "openai"):
             try:
-                questions = self.ollama_questions(
-                    {
-                        "raw_description": raw_description,
-                        "card": suggested.model_dump(),
-                        "missing_fields": missing,
-                    }
-                )
-                provider = "ollama"
-            except (httpx.HTTPError, ValidationError, ValueError, KeyError, TypeError):
+                source = {
+                    "raw_description": raw_description,
+                    "card": suggested.model_dump(),
+                    "missing_fields": missing,
+                }
+                if self.settings.ai_provider == "ollama":
+                    questions = self.ollama_questions(source)
+                else:
+                    questions = self.openai_questions(source)
+                provider = self.settings.ai_provider
+            except (
+                httpx.HTTPError,
+                ValidationError,
+                ValueError,
+                KeyError,
+                TypeError,
+                AttributeError,
+            ):
                 logger.warning("AI provider unavailable or returned invalid output; using stub")
                 reason = (
                     "AI недоступен или вернул некорректный JSON; использована локальная заглушка."

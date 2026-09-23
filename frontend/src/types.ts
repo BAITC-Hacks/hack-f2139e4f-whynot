@@ -16,6 +16,6 @@ export interface Proposal extends ProposalInput { id:string; task_id:string; tea
 export type MilestoneCode = 'prototype'|'pilot'|'delivery';
 export interface Milestone { id:string; proposal_id:string; code:MilestoneCode; evidence:string; points:number; confirmed_by:string; confirmed_at:string }
 export interface Question { field:CardField; question:string }
-export interface AssistResult { provider:'stub'|'ollama'; fallback_reason:string|null; based_on_revision:number; suggested_card:CardData; questions:Question[]; missing_fields:CardField[] }
+export interface AssistResult { provider:'stub'|'ollama'|'openai'; fallback_reason:string|null; based_on_revision:number; suggested_card:CardData; questions:Question[]; missing_fields:CardField[] }
 export interface CatalogFilters { topic?:string; readiness?:Readiness; limit?:number; offset?:number }
 export interface TaskCreateInput { raw_description:string; topic:string; title?:string }

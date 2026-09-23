@@ -31,7 +31,7 @@ flowchart LR
     D --> T[Задачи и публикация]
     D --> P[Команды, отклики и этапы]
     T --> R[Чистая функция рейтинга]
-    T --> AI[AI-помощник: stub или Ollama]
+    T --> AI[AI-помощник: stub, Ollama или OpenAI]
     T --> DB[(SQLite / SQLAlchemy)]
     P --> DB
 ```
