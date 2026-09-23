@@ -198,5 +198,5 @@ def test_disabling_demo_auth_does_not_enable_anonymous_writes():
                 headers={"X-Actor-ID": "business-1"},
                 json={"raw_description": "Task", "topic": "retail"},
             ).status_code
-            == 503
+            == 401
         )

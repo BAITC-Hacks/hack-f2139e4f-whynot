@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
+from app.account_models import Account
 from app.api.dependencies import DB, Student
 from app.errors import DomainError
 from app.models import Actor, Team
@@ -14,7 +15,9 @@ router = APIRouter(tags=["Teams"])
 def actors(db: DB, request: Request):
     if not request.app.state.settings.demo_mode:
         raise DomainError(404, "NOT_FOUND", "Демо-режим выключен.")
-    return db.scalars(select(Actor).order_by(Actor.id)).all()
+    return db.scalars(
+        select(Actor).where(~Actor.id.in_(select(Account.actor_id))).order_by(Actor.id)
+    ).all()
 
 
 @router.get("/teams", response_model=list[TeamView])

@@ -6,6 +6,7 @@ import { useRole } from '../context/RoleContext';
 import { useToast } from '../context/ToastContext';
 import { Button, Card, ErrorBanner, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { TOPICS } from '../ui/fields';
+import { VoiceInput } from '../components/VoiceInput';
 import type { Task } from '../types';
 
 export function NewTaskPage() {
@@ -16,6 +17,7 @@ export function NewTaskPage() {
   const [title, setTitle] = useState('');
   const [topic, setTopic] = useState('retail');
   const [busy, setBusy] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState(false);
   const [created, setCreated] = useState<Task | null>(null);
@@ -26,7 +28,7 @@ export function NewTaskPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setValidation(true);
-    if (!actor || submitting.current || (!created && (!description.trim() || !topic.trim()))) return;
+    if (!actor || voiceBusy || submitting.current || (!created && (!description.trim() || !topic.trim()))) return;
     submitting.current = true;
     setBusy(true);
     setError(null);
@@ -61,6 +63,7 @@ export function NewTaskPage() {
           <Select label="Тема задачи" value={topic} onChange={e => setTopic(e.target.value)} disabled={busy || !!created}>{TOPICS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select>
           <Textarea label="Описание задачи" placeholder="Сейчас закупщик вручную проверяет остатки. Хотим заранее понимать, какие товары заканчиваются, чтобы сократить потери продаж…" value={description} onChange={e => setDescription(e.target.value)} rows={9} maxLength={8000} disabled={busy || !!created} error={validation && !description.trim() ? 'Расскажите хотя бы немного о вашей задаче.' : undefined} />
           <p className="muted text-small">{description.length.toLocaleString('ru-RU')} / 8 000 символов. Укажите только те сведения, которыми готовы поделиться.</p>
+          <VoiceInput disabled={busy || !!created} remaining={8000 - description.trim().length - (description.trim() ? 1 : 0)} onBusyChange={setVoiceBusy} onTranscript={text => setDescription(previous => [previous.trim(), text].filter(Boolean).join('\n'))} />
           <div className="stack" style={{ gap: 8 }}>
             <span className="muted text-small">Или начните с примера:</span>
             <div className="form-actions">
@@ -73,7 +76,7 @@ export function NewTaskPage() {
           </div>
           {created && <div className="notice"><Check size={18} /><span>Черновик уже сохранён. Повторный запрос продолжит работу с этой задачей.</span></div>}
           {error && <ErrorBanner message={error} />}
-          <div className="form-actions"><Button type="submit" loading={busy}>{created ? 'Повторить уточнение' : 'Перейти к уточнению'}<ArrowRight size={17} /></Button>{created && <Link to={`/tasks/${created.id}/edit`} className="text-link">Заполнить карточку вручную</Link>}</div>
+          <div className="form-actions"><Button type="submit" loading={busy} disabled={voiceBusy}>{created ? 'Повторить уточнение' : 'Перейти к уточнению'}<ArrowRight size={17} /></Button>{created && <Link to={`/tasks/${created.id}/edit`} className="text-link">Заполнить карточку вручную</Link>}</div>
         </form>
       </Card>
       <aside className="stack">

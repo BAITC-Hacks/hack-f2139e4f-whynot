@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
+from app.account_models import Account
+from app.auth import SESSION_COOKIE, session_actor
 from app.errors import DomainError
 from app.models import Actor
 
@@ -19,13 +21,18 @@ DB = Annotated[Session, Depends(get_session)]
 def current_actor(
     request: Request, db: DB, x_actor_id: Annotated[str | None, Header()] = None
 ) -> Actor:
-    if not request.app.state.settings.demo_mode:
-        raise DomainError(
-            503, "AUTH_NOT_CONFIGURED", "Подключите авторизацию для рабочего сервера."
-        )
+    token = request.cookies.get(SESSION_COOKIE)
+    actor = session_actor(db, token)
+    if actor is not None:
+        return actor
+    # An invalid cookie must never silently downgrade to demo impersonation.
+    if token or not request.app.state.settings.demo_mode:
+        raise DomainError(401, "LOGIN_REQUIRED", "Войдите в аккаунт.")
     actor = db.get(Actor, x_actor_id) if x_actor_id else None
+    if actor is not None and db.get(Account, actor.id) is not None:
+        raise DomainError(401, "LOGIN_REQUIRED", "Войдите в аккаунт.")
     if actor is None:
-        raise DomainError(401, "ACTOR_REQUIRED", "Укажите X-Actor-ID из /api/v1/demo/actors.")
+        raise DomainError(401, "LOGIN_REQUIRED", "Войдите в аккаунт.")
     return actor
 
 

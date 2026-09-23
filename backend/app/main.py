@@ -10,7 +10,8 @@ from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException
 
 from app.ai import Assistant
-from app.api import proposals, tasks, teams
+from app.api import audio, auth, history, proposals, tasks, teams
+from app.auth import AuthRateLimiter, check_request_origin
 from app.config import Settings
 from app.db import Base, make_engine, make_session_factory
 from app.errors import DomainError
@@ -40,20 +41,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="AI Sana Backend",
         version="0.1.0",
         lifespan=lifespan,
-        description=(
-            "Task readiness, open catalog and manual team selection. Demo auth: X-Actor-ID."
-        ),
+        description=("Task readiness, open catalog, business/student accounts and team selection."),
         responses={code: {"model": ErrorResponse} for code in (401, 403, 404, 409, 422, 503)},
     )
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.state.engine = engine
     app.state.assistant = Assistant(settings)
+    app.state.auth_rate_limiter = AuthRateLimiter()
+
+    @app.middleware("http")
+    async def protect_cookie_requests(request: Request, call_next):
+        try:
+            check_request_origin(request)
+            if request.url.path == "/api/v1/ai/transcribe":
+                length = request.headers.get("content-length", "0")
+                if not length.isdigit() or int(length) > audio.MAX_AUDIO_BYTES + 65536:
+                    return error_response(413, "AUDIO_TOO_LARGE", "Размер аудио не более 10 МБ.")
+        except DomainError as exc:
+            return error_response(exc.status, exc.code, exc.message)
+        response = await call_next(request)
+        if request.url.path.startswith("/api/v1/auth/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["Content-Type", "X-Actor-ID"],
+        allow_credentials=True,
     )
 
     @app.exception_handler(DomainError)
@@ -89,7 +107,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "demo_mode": settings.demo_mode,
         }
 
-    for router in (tasks.router, teams.router, proposals.router):
+    for router in (
+        auth.router,
+        tasks.router,
+        teams.router,
+        proposals.router,
+        history.router,
+        audio.router,
+    ):
         app.include_router(router, prefix="/api/v1")
     return app
 

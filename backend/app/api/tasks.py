@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app import tasks
 from app.ai import SYSTEM_PROMPT, build_assist_source
 from app.api.dependencies import DB, Business
+from app.business_profiles import business_ai_context
 from app.errors import DomainError
 from app.models import Task
 from app.schemas import (
@@ -73,11 +74,13 @@ def publish_task(task_id: str, payload: RevisionInput, db: DB, actor: Business):
 @router.post("/tasks/{task_id}/assist", response_model=AssistView, tags=["AI"])
 def assist(task_id: str, payload: AssistInput, db: DB, actor: Business, request: Request):
     task = tasks.owned_task(db, task_id, actor)
+    request.app.state.auth_rate_limiter.check(f"assist:{actor.id}", 60)
     return request.app.state.assistant.assist(
         task.raw_description,
         Card.model_validate(task.card),
         task.revision,
         payload,
+        business_context=business_ai_context(db, actor, task_id),
     )
 
 
