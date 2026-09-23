@@ -669,3 +669,5 @@ Gmail не обязателен; [инструкция SMTP](backend/docs/studen
 - [Swagger API — http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - [Исходники, ветка backend](https://github.com/BAITC-Hacks/hack-f2139e4f-whynot/tree/backend)
 - [README frontend](frontend/README.md) и [README backend](backend/README.md)
+- Видео-демонстрация https://drive.google.com/file/d/1q3tR-QU3tZs95tE4Nbj9DEo5Bqj3qL5R/view?usp=sharing
+
