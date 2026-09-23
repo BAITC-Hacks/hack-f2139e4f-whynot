@@ -6,6 +6,7 @@ import { Button, Card, ErrorBanner, Input, PageHeader, Skeleton, Textarea } from
 import { useRole } from '../context/RoleContext';
 import { useAsync } from '../hooks/useAsync';
 import type { BusinessProfile } from '../types';
+import { BusinessShowcase } from '../components/BusinessShowcase';
 import './ProfileHistory.css';
 
 export function BusinessProfilePage() {
@@ -55,6 +56,7 @@ function BusinessProfileForm({ actorId }: { actorId: string }) {
 
   return <div className="page">
     <PageHeader title="Профиль бизнеса" subtitle="Расскажите о компании один раз — помощник учтёт этот контекст при работе над задачами." />
+    <BusinessShowcase />
     {request.loading && <Skeleton lines={7} />}
     {request.error && <ErrorBanner message={request.error} onRetry={request.reload} />}
     {!request.loading && profile && <div className="business-profile-layout">

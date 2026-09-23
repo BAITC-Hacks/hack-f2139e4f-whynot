@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Navigate, Route, Routes, Link, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { BusinessProgressProvider } from './context/BusinessProgressContext';
+import { BusinessProgressPage } from './pages/BusinessProgressPage';
 import { useRole } from './context/RoleContext';
 import { NewTaskPage } from './pages/NewTaskPage';
 import { QuestionsPage } from './pages/QuestionsPage';
@@ -38,7 +40,7 @@ export function App() {
     <Route path="forgot-password" element={<ForgotPasswordPage />} />
     <Route path="reset-password" element={<ResetPasswordPage />} />
     {/* Remount account pages on session changes, without discarding a recovery token. */}
-    <Route element={<Layout key={`${actor?.id || 'guest'}:${sessionVersion}`} />}>
+    <Route element={<BusinessProgressProvider key={`${actor?.id || 'guest'}:${sessionVersion}`}><Layout /></BusinessProgressProvider>}>
       <Route index element={<Navigate to="/catalog" replace />} />
       <Route path="catalog" element={<CatalogPage />} />
       <Route path="new" element={<RoleGuard role="business"><NewTaskPage /></RoleGuard>} />
@@ -47,6 +49,7 @@ export function App() {
       <Route path="tasks/:id" element={<TaskDetailPage />} />
       <Route path="tasks/:id/proposals" element={<RoleGuard role="business"><ProposalsPage /></RoleGuard>} />
       <Route path="business/tasks" element={<RoleGuard role="business"><BusinessTasksPage /></RoleGuard>} />
+      <Route path="business/progress" element={<RoleGuard role="business"><BusinessProgressPage /></RoleGuard>} />
       <Route path="business/profile" element={<RoleGuard role="business"><BusinessProfilePage /></RoleGuard>} />
       <Route path="business/history" element={<RoleGuard role="business"><BusinessHistoryPage /></RoleGuard>} />
       <Route path="recommendations" element={<RoleGuard role="student"><CatalogPage recommendations /></RoleGuard>} />

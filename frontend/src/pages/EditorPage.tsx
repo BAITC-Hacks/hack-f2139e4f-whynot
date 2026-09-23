@@ -1,5 +1,6 @@
+import { BusinessProjectStatus } from '../components/BusinessProgressWidgets';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Check, CheckCircle2, FileCheck2, Globe, Save, Sparkles } from 'lucide-react';
 import { ApiError, api, errorMessage } from '../api/client';
 import { useRole } from '../context/RoleContext';
@@ -20,6 +21,7 @@ export function EditorPage() {
 
 function EditorScreen() {
   const { id = '' } = useParams();
+  const location = useLocation();
   const { actor } = useRole();
   const { toast } = useToast();
   const { data: task, setData: setTask, loading, error: loadError, reload } = useAsync(() => api.getTask(actor!.id, id), [actor?.id, id]);
@@ -33,6 +35,14 @@ function EditorScreen() {
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => { if (task && !card) setCard({ ...task.card }); }, [task, card]);
+
+  useEffect(() => {
+    if (!task || !card || !location.hash.startsWith('#card-')) return;
+    const target = document.getElementById(location.hash.slice(1));
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    target.focus({ preventScroll: true });
+  }, [task?.id, Boolean(card), location.hash]);
 
   function focusField(field: CardField) {
     const input = document.getElementById(`card-${field}`);
@@ -129,7 +139,7 @@ function EditorScreen() {
     {error && <ErrorBanner message={error} />}
     {task.status === 'published' && !published && <div className="notice"><Globe size={18} /><span>В каталоге доступна редакция {task.published_revision}. Текущие изменения появятся после подтверждения и новой публикации.</span></div>}
     {published && <div className="notice success"><CheckCircle2 size={19} /><span>Задача опубликована и доступна командам.</span><Link className="text-link" to={`/tasks/${task.id}`}>Посмотреть в каталоге</Link><Link className="text-link" to={`/tasks/${task.id}/proposals`}>Отклики</Link></div>}
-    <div className="editor-layout">
+    <BusinessProjectStatus taskId={id} /><div className="editor-layout">
       <div className="stack">
         <Card><div className="row between"><div><span className="eyebrow">ВАША КАРТОЧКА</span><h2 className="section-title">Уже заполнено {completeCount} из 10 полей</h2></div><Badge>{dirty ? 'Есть несохранённые правки' : `Редакция ${task.revision}`}</Badge></div><div className="progress-bar" aria-label={`Заполнено ${completeCount} из 10 полей`}><span style={{ width: `${completeCount * 10}%` }} /></div><p className="muted text-small">Заполненность помогает двигаться по карточке. Баллы начисляются после подтверждения сведений.</p>{!dirty && <Link className="text-link" to={`/new/questions?task=${encodeURIComponent(task.id)}`}><Sparkles size={16} />Открыть вопросы помощника</Link>}{dirty && <p className="muted text-small">Сохраните правки, чтобы открыть вопросы помощника.</p>}</Card>
         <form className="stack" onSubmit={event => { event.preventDefault(); void save(); }}>

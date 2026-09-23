@@ -1,5 +1,6 @@
 import type { Actor, AuthSession, BusinessHistoryPage, BusinessProfile, LoginInput, MessageResult, Question, RegisterInput, StudentHistoryPage, TranscriptionResult, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { ApiError } from './errors';
+import { notifyBusinessActivity } from './businessActivity';
 export { ApiError, errorMessage } from './errors';
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/$/,'')}/api/v1` : '/api/v1')).replace(/\/$/,'');
@@ -14,7 +15,8 @@ export function subscribeSessionExpired(listener: () => void) {
  return () => { sessionExpiredListeners.delete(listener); };
 }
 async function request<T>(path:string,actorId?:string,method='GET',body?:unknown,timeoutMs=45000):Promise<T>{
- if(USE_MOCKS){try{const {mockRequest}=await import('./mocks');return await mockRequest<T>(path,actorId,method,body)}catch(error){throw error instanceof ApiError?error:new ApiError('Не удалось обработать запрос в мок-режиме.')}}
+ const notifyActivity=()=>{if(actorId&&method!=='GET'&&/^\/(tasks|proposals)(\/|$)/.test(path)&&!path.endsWith('/assist'))notifyBusinessActivity(actorId)};
+ if(USE_MOCKS){try{const {mockRequest}=await import('./mocks');const result=await mockRequest<T>(path,actorId,method,body);notifyActivity();return result}catch(error){throw error instanceof ApiError?error:new ApiError('Не удалось обработать запрос в мок-режиме.')}}
  const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),timeoutMs);
  const requestSessionVersion=sessionVersion;
  const multipart=body instanceof FormData;
@@ -45,6 +47,7 @@ async function request<T>(path:string,actorId?:string,method='GET',body?:unknown
    throw new ApiError(text,code,response.status);
   }
   if(['/auth/login','/auth/register','/auth/logout','/auth/reset-password'].includes(path))sessionVersion++;
+  if(requestSessionVersion===sessionVersion)notifyActivity();
   return payload as T;
  } catch(error){if(error instanceof ApiError)throw error;if(error instanceof DOMException&&error.name==='AbortError')throw new ApiError('Сервер отвечает слишком долго. Попробуйте ещё раз.','TIMEOUT');throw new ApiError('Нет соединения с сервером. Проверьте, что backend запущен, и повторите запрос.','NETWORK_ERROR')}
  finally{clearTimeout(timeout)}
