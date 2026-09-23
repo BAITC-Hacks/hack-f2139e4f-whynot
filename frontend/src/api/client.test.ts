@@ -8,6 +8,16 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Сессия и голосовой ввод через API', () => {
+  it.each(['AI_NOT_CONFIGURED','OPENAI_NOT_CONFIGURED'])('показывает понятное сообщение для %s без технических настроек',async(code)=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{code,message:'Заполните OPENAI_API_KEY в backend/.env.'}}),{status:503})));
+    const {api}=await import('./client');
+    await expect(api.transcribeAudio(new Blob(['audio'],{type:'audio/webm'}),'recording.webm')).rejects.toMatchObject({code,status:503,message:'Голосовой ввод пока не настроен. Вы можете заполнить описание текстом.'});
+  });
+  it('не маскирует ошибку распознавания под отсутствие настройки',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{code:'TRANSCRIPTION_FAILED',message:'Не удалось распознать запись. Попробуйте ещё раз.'}}),{status:502})));
+    const {api}=await import('./client');
+    await expect(api.transcribeAudio(new Blob(['audio'],{type:'audio/webm'}),'recording.webm')).rejects.toMatchObject({code:'TRANSCRIPTION_FAILED',status:502,message:'Не удалось распознать запись. Попробуйте ещё раз.'});
+  });
   it('проверяет пароль через JSON POST своего backend без URL-параметров и кеширования',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
     const {api}=await import('./client');const candidate='  Unicode e\u0301 phrase  ';await api.passwordStrength(candidate);

@@ -4,6 +4,11 @@
 JSON-поля — `snake_case`. Запросы с телом передаются как `application/json`, кроме
 `POST /ai/transcribe`: он принимает `multipart/form-data` с полем `file`.
 
+`GET /health` находится вне `/api/v1` и возвращает `status`, `ai_provider`,
+`openai_configured` и `demo_mode`. `openai_configured` — только наличие непустого
+ключа в настройках запущенного backend, без раскрытия секрета. Это не проверка
+доступа к OpenAI или лимита API; живой `/assist` должен вернуть `provider=openai`.
+
 ## Аккаунты
 
 Используйте `/auth/register`, `/auth/login`, `/auth/me`, `/auth/logout` и cookie-сессии

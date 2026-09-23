@@ -1,11 +1,16 @@
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parents[1] / ".env",
+        env_file_encoding="utf-8-sig",
+        extra="ignore",
+    )
 
     database_url: str = "sqlite:///./data/ai_sana.db"
     demo_mode: bool = False
@@ -32,3 +37,12 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_transcription_model: str = "gpt-4o-mini-transcribe"
     ai_timeout_seconds: float = Field(default=30, gt=0, le=120)
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def normalize_openai_api_key(cls, value: str | SecretStr | None) -> str | None:
+        if isinstance(value, SecretStr):
+            value = value.get_secret_value()
+        if isinstance(value, str):
+            return value.strip() or None
+        return value

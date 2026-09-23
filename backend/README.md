@@ -11,15 +11,19 @@
 Из корня репозитория, PowerShell:
 
 ```powershell
-python -m venv .venv
+if (-not (Test-Path -LiteralPath .venv)) { python -m venv .venv }
 .\.venv\Scripts\python.exe -m pip install -c backend/requirements.lock -e './backend[dev]'
 Set-Location backend
-Copy-Item .env.example .env
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Если `.env` уже настроен, сохраните его значения. Активация venv не требуется.
 `requirements.lock` фиксирует проверенные версии прямых и транзитивных зависимостей.
+Backend читает `backend/.env` независимо от папки запуска. Ключ OpenAI нужен только
+серверу: после его изменения перезапустите backend. `/health` показывает
+`openai_configured: true`, если ключ загружен; это не проверка его действительности.
+Подключение и диагностика ИИ описаны в [корневом README](../README.md#9-данные-и-интеграции).
 
 Для macOS/Linux: `python3 -m venv .venv`, далее используйте `.venv/bin/python`
 из корня или `../.venv/bin/python` из `backend`; файл настроек копируется через `cp`.

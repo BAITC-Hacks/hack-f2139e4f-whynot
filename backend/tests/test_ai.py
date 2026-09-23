@@ -168,7 +168,7 @@ def test_openai_missing_key_falls_back_without_http_call(monkeypatch):
         "Нужен прогноз", Card(), 1, AssistInput()
     )
     assert result.provider == "stub"
-    assert result.fallback_reason
+    assert "пока не подключён" in result.fallback_reason
 
 
 def test_openai_http_error_falls_back_without_exposing_key(monkeypatch):

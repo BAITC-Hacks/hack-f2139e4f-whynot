@@ -249,6 +249,14 @@ class Assistant:
                 reason = (
                     "AI недоступен или вернул некорректный JSON; использована локальная заглушка."
                 )
+                if self.settings.ai_provider == "openai" and not (
+                    self.settings.openai_api_key
+                    and self.settings.openai_api_key.get_secret_value().strip()
+                ):
+                    reason = (
+                        "ИИ-помощник пока не подключён. Используются шаблонные вопросы; "
+                        "вы можете продолжить заполнять карточку."
+                    )
         return AssistView(
             provider=provider,
             fallback_reason=reason,

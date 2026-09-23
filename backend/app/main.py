@@ -107,6 +107,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "status": "ok",
             "ai_provider": settings.ai_provider,
+            "openai_configured": bool(
+                settings.openai_api_key and settings.openai_api_key.get_secret_value().strip()
+            ),
             "demo_mode": settings.demo_mode,
         }
 
