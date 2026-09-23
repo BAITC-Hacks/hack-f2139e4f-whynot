@@ -8,6 +8,21 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Сессия и голосовой ввод через API', () => {
+  it('передаёт профиль студента при регистрации и код приглашения через JSON POST',async()=>{
+    const fetcher=vi.fn().mockImplementation(async()=>new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
+    const {api}=await import('./client');
+    const input={name:'Student',email:'student@example.test',password:'test-password-long',role:'student' as const,username:'student_1',phone:'+77001234567',positions:['Backend','Frontend'],skills:['Python','React']};
+    await api.register(input);expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(input);
+    await api.joinTeam('Team Name','invite-code');
+    expect(fetcher.mock.calls[1][0]).toBe('/api/v1/teams/join');expect(fetcher.mock.calls[1][1]).toMatchObject({method:'POST',credentials:'include'});expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({name:'Team Name',invite_code:'invite-code'});
+  });
+  it('запрашивает переписку с независимым курсором и не включает контакты в URL',async()=>{
+    const fetcher=vi.fn().mockImplementation(async()=>new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
+    const {api}=await import('./client');
+    await api.getMessages('proposal/one',123,50);expect(fetcher.mock.calls[0][0]).toBe('/api/v1/proposals/proposal%2Fone/messages?after_id=123&limit=50');
+    await api.sendMessage('proposal/one','Обсудим результат');expect(fetcher.mock.calls[1][1]).toMatchObject({method:'POST',credentials:'include'});expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({body:'Обсудим результат'});
+    await api.getProposalContact('proposal/one');expect(fetcher.mock.calls[2][0]).toBe('/api/v1/proposals/proposal%2Fone/contact');
+  });
   it('использует cookie и не позволяет actorId подменить аккаунт', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
     vi.stubGlobal('fetch', fetcher);
@@ -49,6 +64,8 @@ describe('Сессия и голосовой ввод через API', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     const { api } = await import('./client');
     await expect(api.register({ name: 'Бизнес', email: 'member@example.test', password: 'long-password', role: 'business' })).rejects.toMatchObject({ code: 'DEMO_ONLY' });
+    await expect(api.joinTeam('Team','code')).rejects.toMatchObject({code:'DEMO_ONLY'});
+    await expect(api.sendMessage('proposal','message')).rejects.toMatchObject({code:'DEMO_ONLY'});
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

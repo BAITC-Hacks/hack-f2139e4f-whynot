@@ -33,10 +33,13 @@ def publish(client, task, business):
     return response.json()
 
 
-def submit(client, task, student="student-1"):
+def ensure_ready_team(client, student="student-1"):
     headers = {"X-Actor-ID": student}
-    response = client.put(
-        "/api/v1/teams/me",
+    existing = client.get("/api/v1/teams/me", headers=headers)
+    if existing.status_code == 200:
+        return existing.json()
+    response = client.post(
+        "/api/v1/teams",
         headers=headers,
         json={
             "name": f"Team {student}",
@@ -45,7 +48,21 @@ def submit(client, task, student="student-1"):
             "technologies": ["FastAPI"],
         },
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 201, response.text
+    team = response.json()
+    for member in (2, 3):
+        joined = client.post(
+            "/api/v1/teams/join",
+            headers={"X-Actor-ID": f"{student}-member-{member}"},
+            json={"name": team["name"], "invite_code": team["invite_code"]},
+        )
+        assert joined.status_code == 200, joined.text
+    return client.get("/api/v1/teams/me", headers=headers).json()
+
+
+def submit(client, task, student="student-1"):
+    headers = {"X-Actor-ID": student}
+    ensure_ready_team(client, student)
     return client.post(
         f"/api/v1/tasks/{task['id']}/proposals",
         headers=headers,

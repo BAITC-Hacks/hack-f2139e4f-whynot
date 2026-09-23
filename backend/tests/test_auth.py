@@ -9,8 +9,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.account_models import Account, LoginSession, PasswordReset
-from app.auth import SESSION_COOKIE, hash_password, token_digest, verify_password
+from app.auth import SESSION_COOKIE, AuthRateLimiter, hash_password, token_digest, verify_password
 from app.config import Settings
+from app.errors import DomainError
 from app.main import create_app
 from app.models import Actor, Team, now
 
@@ -47,6 +48,16 @@ def register(client, email="business@example.com", role="business"):
             "email": email,
             "password": PASSWORD,
             "role": role,
+            **(
+                {
+                    "username": "test_student",
+                    "phone": "+77010000001",
+                    "positions": ["Backend"],
+                    "skills": ["Python"],
+                }
+                if role == "student"
+                else {}
+            ),
         },
     )
 
@@ -89,12 +100,13 @@ def test_register_cookie_and_hash_keep_password_and_token_private(auth_client, a
     assert auth_client.get("/api/v1/auth/me").headers["cache-control"] == "no-store"
 
 
-def test_student_has_own_team_and_cannot_create_business_task(auth_client, auth_app):
+def test_student_starts_without_team_and_cannot_create_business_task(auth_client, auth_app):
     actor = register(auth_client, "student@example.com", "student").json()["actor"]
     with auth_app.state.session_factory() as db:
         team = db.scalar(select(Team).where(Team.owner_id == actor["id"]))
-        assert team.name == actor["name"]
-    assert auth_client.get("/api/v1/teams/me").json()["owner_id"] == actor["id"]
+        assert team is None
+    assert auth_client.get("/api/v1/teams/me").status_code == 409
+    assert auth_client.get("/api/v1/students/profile").json()["username"] == "test_student"
     assert (
         auth_client.post(
             "/api/v1/tasks",
@@ -447,3 +459,17 @@ def test_registration_duplicate_at_flush_rolls_back_and_keeps_original_session(
         assert db.scalars(select(Team)).all() == []
         assert len(db.scalars(select(Account)).all()) == 1
         assert len(db.scalars(select(LoginSession)).all()) == 1
+
+
+def test_chat_window_does_not_expire_login_attempts(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("app.auth.monotonic", lambda: clock[0])
+    limiter = AuthRateLimiter()
+    limiter.check("login", 1, window=900)
+    clock[0] = 61
+    limiter.check("chat", 30, window=60)
+    with pytest.raises(DomainError) as error:
+        limiter.check("login", 1, window=900)
+    assert error.value.status == 429
+    clock[0] = 901
+    limiter.check("login", 1, window=900)

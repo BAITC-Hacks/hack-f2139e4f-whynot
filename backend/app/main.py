@@ -10,13 +10,14 @@ from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException
 
 from app.ai import Assistant
-from app.api import audio, auth, history, proposals, tasks, teams
+from app.api import audio, auth, chat, history, proposals, students, tasks, teams
 from app.auth import AuthRateLimiter, check_request_origin
 from app.config import Settings
 from app.db import Base, make_engine, make_session_factory
 from app.errors import DomainError
 from app.schemas import ErrorResponse
 from app.seed import seed_actors
+from app.teams import backfill_team_memberships
 
 
 def error_response(status: int, code: str, message: str):
@@ -34,6 +35,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.demo_mode:
             with session_factory() as db:
                 seed_actors(db)
+        with session_factory() as db:
+            backfill_team_memberships(db)
         yield
         engine.dispose()
 
@@ -111,6 +114,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         auth.router,
         tasks.router,
         teams.router,
+        students.router,
+        chat.router,
         proposals.router,
         history.router,
         audio.router,

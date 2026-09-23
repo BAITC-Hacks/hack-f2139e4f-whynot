@@ -1,4 +1,4 @@
-import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Question, Task, TaskCreateInput, Team, TeamInput } from '../types';
+import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, MessagePage, Milestone, MilestoneCode, Proposal, ProposalContact, ProposalInput, ProposalMessage, Question, RegistrationInput, StudentProfile, StudentProfileInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { ApiError } from './errors';
 export { ApiError, errorMessage } from './errors';
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
@@ -14,9 +14,16 @@ Object.assign(messages, {
  UNTRUSTED_ORIGIN:'Сервер не разрешает запросы с этого адреса сайта. Проверьте настройки приложения.',
  RATE_LIMITED:'Слишком много попыток. Подождите немного и повторите.',
  OPENAI_NOT_CONFIGURED:'Голосовой ввод пока не настроен. Вы можете заполнить описание текстом.',
+ STUDENT_PROFILE_REQUIRED:'Заполните личный профиль студента, прежде чем создавать команду, вступать в неё или отправлять отклик.',
+ USERNAME_TAKEN:'Этот username уже занят. Выберите другой.', USERNAME_EXISTS:'Этот username уже занят. Выберите другой.',
+ TEAM_LEADER_REQUIRED:'Это действие доступно только лидеру команды.', LEADER_REQUIRED:'Это действие доступно только лидеру команды.',
+ TEAM_SIZE_REQUIRED:'Для отправки отклика соберите команду из 3–5 участников.', TEAM_NOT_READY:'Для отправки отклика соберите команду из 3–5 участников.',
+ TEAM_FULL:'В команде уже 5 участников.', TEAM_ALREADY_JOINED:'Вы уже состоите в команде.', TEAM_ALREADY_EXISTS:'Вы уже состоите в команде.',
+ INVALID_INVITE:'Название команды или код приглашения не совпадают.', INVITE_INVALID:'Название команды или код приглашения не совпадают.',
+ TEAM_NAME_TAKEN:'Это название команды уже занято.', CHAT_READ_ONLY:'Предложение отклонено. Переписка доступна только для чтения.',
 });
 async function request<T>(path:string,actorId?:string,method='GET',body?:unknown,timeoutMs=45000):Promise<T>{
- if(USE_MOCKS && (path.startsWith('/auth/') || path==='/ai/transcribe'))throw new ApiError('Регистрация и голосовой ввод доступны при подключении к серверу. Сейчас включён демонстрационный режим.','DEMO_ONLY');
+ if(USE_MOCKS && (path.startsWith('/auth/') || path==='/ai/transcribe' || path.startsWith('/students/') || /\/proposals\/[^/]+\/(messages|contact)/.test(path) || path==='/teams/join' || path==='/teams/me/invite' || path==='/teams/me/leave' || path==='/teams'&&method==='POST'))throw new ApiError('Эта функция доступна при подключении к серверу. Сейчас включён демонстрационный режим.','DEMO_ONLY');
  if(USE_MOCKS){try{const {mockRequest}=await import('./mocks');return await mockRequest<T>(path,actorId,method,body)}catch(error){throw error instanceof ApiError?error:new ApiError('Не удалось обработать запрос в мок-режиме.')}}
  const multipart=typeof FormData!=='undefined' && body instanceof FormData;
  const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),timeoutMs);
@@ -34,7 +41,7 @@ const id=(value:string)=>encodeURIComponent(value);
 export const api={
  me:()=>request<{actor:Actor}>('/auth/me'),
  login:(input:{email:string;password:string})=>request<{actor:Actor}>('/auth/login',undefined,'POST',input),
- register:(input:{name:string;email:string;password:string;role:Actor['role']})=>request<{actor:Actor}>('/auth/register',undefined,'POST',input),
+ register:(input:RegistrationInput)=>request<{actor:Actor}>('/auth/register',undefined,'POST',input),
  logout:()=>request<{message:string}>('/auth/logout',undefined,'POST'),
  forgotPassword:(email:string)=>request<{message:string;delivery?:'file'|'smtp'}>('/auth/forgot-password',undefined,'POST',{email}),
  resetPassword:(token:string,password:string)=>request<{message:string}>('/auth/reset-password',undefined,'POST',{token,password}),
@@ -50,11 +57,20 @@ export const api={
  getCatalog:(filters:CatalogFilters={})=>{const search=new URLSearchParams();Object.entries(filters).forEach(([key,value])=>{if(value!==undefined&&value!=='')search.set(key,String(value))});return request<CatalogPage>('/catalog'+(search.size?'?'+search:''))},
  getCatalogTask:(taskId:string)=>request<CatalogTask>(`/catalog/${id(taskId)}`),
  getTeams:()=>request<Team[]>('/teams'),
+ getStudentProfile:()=>request<StudentProfile>('/students/profile'),
+ saveStudentProfile:(input:StudentProfileInput)=>request<StudentProfile>('/students/profile',undefined,'PUT',input),
+ createTeam:(input:TeamInput)=>request<Team>('/teams',undefined,'POST',input),
+ joinTeam:(name:string,invite_code:string)=>request<Team>('/teams/join',undefined,'POST',{name,invite_code}),
+ rotateTeamInvite:()=>request<{invite_code:string}>('/teams/me/invite',undefined,'POST'),
+ leaveTeam:()=>request<{message:string}>('/teams/me/leave',undefined,'POST'),
  getMyTeam:(actorId:string)=>request<Team>('/teams/me',actorId),
  saveTeam:(actorId:string,input:TeamInput)=>request<Team>('/teams/me',actorId,'PUT',input),
  createProposal:(actorId:string,taskId:string,input:ProposalInput)=>request<Proposal>(`/tasks/${id(taskId)}/proposals`,actorId,'POST',input),
  getTaskProposals:(actorId:string,taskId:string)=>request<Proposal[]>(`/tasks/${id(taskId)}/proposals`,actorId),
  getMyProposals:(actorId:string)=>request<Proposal[]>('/proposals/mine',actorId),
+ getProposalContact:(proposalId:string)=>request<ProposalContact>(`/proposals/${id(proposalId)}/contact`),
+ getMessages:(proposalId:string,afterId=0,limit=100)=>request<MessagePage>(`/proposals/${id(proposalId)}/messages?after_id=${afterId}&limit=${limit}`),
+ sendMessage:(proposalId:string,body:string)=>request<ProposalMessage>(`/proposals/${id(proposalId)}/messages`,undefined,'POST',{body}),
  decideProposal:(actorId:string,proposalId:string,decision:'accepted'|'rejected',note='')=>request<Proposal>(`/proposals/${id(proposalId)}/decision`,actorId,'POST',{decision,note}),
  getMilestones:(actorId:string,proposalId:string)=>request<Milestone[]>(`/proposals/${id(proposalId)}/milestones`,actorId),
  confirmMilestone:(actorId:string,proposalId:string,code:MilestoneCode,evidence:string)=>request<Milestone>(`/proposals/${id(proposalId)}/milestones`,actorId,'POST',{code,evidence}),

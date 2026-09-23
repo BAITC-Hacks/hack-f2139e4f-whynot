@@ -56,9 +56,9 @@ def main():
         assert public["rating"]["score"] == 100
         team = client.get("/api/v1/teams/me", headers=STUDENT)
         if team.status_code == 409 and team.json()["error"]["code"] == "TEAM_REQUIRED":
-            call(
-                "PUT",
-                "/teams/me",
+            team_data = call(
+                "POST",
+                "/teams",
                 headers=STUDENT,
                 body={
                     "name": "WhyNot Demo",
@@ -69,6 +69,30 @@ def main():
             )
         else:
             team.raise_for_status()
+            team_data = team.json()
+        if team_data["member_count"] < 3:
+            code = (
+                team_data.get("invite_code")
+                or call(
+                    "POST",
+                    "/teams/me/invite",
+                    headers=STUDENT,
+                )["invite_code"]
+            )
+            existing = {member["actor_id"] for member in team_data["members"]}
+            for member in ("student-1-member-2", "student-1-member-3"):
+                if member not in existing:
+                    call(
+                        "POST",
+                        "/teams/join",
+                        headers={"X-Actor-ID": member},
+                        body={
+                            "name": team_data["name"],
+                            "invite_code": code,
+                        },
+                    )
+                if call("GET", "/teams/me", headers=STUDENT)["ready"]:
+                    break
         proposal = call(
             "POST",
             f"{path}/proposals",

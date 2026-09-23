@@ -1,5 +1,6 @@
 """Idempotent synthetic demo fixtures: python -m app.seed."""
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -7,6 +8,8 @@ from app.db import Base, make_engine, make_session_factory
 from app.models import Actor, Proposal, Task, Team, now
 from app.rating import calculate_rating
 from app.schemas import Card
+from app.team_models import ProposalParticipant, TeamMembership
+from app.teams import backfill_team_memberships
 
 EXAMPLES = [
     (
@@ -64,6 +67,16 @@ def seed_actors(db: Session):
         actor_id = f"student-{index}"
         if db.get(Actor, actor_id) is None:
             db.add(Actor(id=actor_id, name=f"Капитан команды {index}", role="student"))
+        for member in (2, 3):
+            member_id = f"student-{index}-member-{member}"
+            if db.get(Actor, member_id) is None:
+                db.add(
+                    Actor(
+                        id=member_id,
+                        name=f"Демо-участник {member} команды {index}",
+                        role="student",
+                    )
+                )
     db.commit()
 
 
@@ -82,6 +95,9 @@ def seed_demo(db: Session):
     ]
     for index, (title, topic, raw, users, data, skill, count) in enumerate(EXAMPLES, 1):
         team_id, draft_id, task_id = f"team-{index}", f"demo-draft-{index}", f"demo-task-{index}"
+        existing_team = db.scalar(select(Team).where(Team.owner_id == f"student-{index}"))
+        if existing_team is not None:
+            team_id = existing_team.id
         if db.get(Team, team_id) is None:
             db.add(
                 Team(
@@ -149,6 +165,20 @@ def seed_demo(db: Session):
                 )
             )
         db.flush()
+        owner_id = f"student-{index}"
+        if db.get(TeamMembership, owner_id) is None:
+            db.add(TeamMembership(actor_id=owner_id, team_id=team_id, slot=1))
+        occupied = set(
+            db.scalars(select(TeamMembership.slot).where(TeamMembership.team_id == team_id))
+        )
+        for member in (2, 3):
+            actor_id = f"student-{index}-member-{member}"
+            if len(occupied) >= 3:
+                break
+            if db.get(TeamMembership, actor_id) is None:
+                slot = next(slot for slot in range(1, 6) if slot not in occupied)
+                db.add(TeamMembership(actor_id=actor_id, team_id=team_id, slot=slot))
+                occupied.add(slot)
         proposal_id = f"demo-proposal-{index}"
         if db.get(Proposal, proposal_id) is None:
             db.add(
@@ -165,7 +195,18 @@ def seed_demo(db: Session):
                     prototype_url=f"https://example.com/prototypes/{index}",
                 )
             )
+            db.flush()
+            participants = db.scalars(
+                select(TeamMembership.actor_id).where(TeamMembership.team_id == team_id)
+            ).all()
+            db.add_all(
+                [
+                    ProposalParticipant(proposal_id=proposal_id, actor_id=actor_id)
+                    for actor_id in participants
+                ]
+            )
     db.commit()
+    backfill_team_memberships(db)
 
 
 def main():

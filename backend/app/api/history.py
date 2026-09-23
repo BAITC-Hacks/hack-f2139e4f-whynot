@@ -5,9 +5,10 @@ from sqlalchemy import func, select
 
 from app.api.dependencies import DB, Business, Student
 from app.business_profiles import BusinessProfile, BusinessProfileView, business_profile
-from app.models import Milestone, Proposal, Task, Team
+from app.models import Milestone, Proposal, Task
 from app.schemas import MilestoneView, ProposalView, Schema, TaskView
 from app.tasks import task_view
+from app.team_models import ProposalParticipant
 
 router = APIRouter(tags=["Profiles and history"])
 Limit = Annotated[int, Query(ge=1, le=100)]
@@ -120,11 +121,14 @@ def business_history(db: DB, actor: Business, limit: Limit = 20, offset: Offset 
 
 @router.get("/students/history", response_model=StudentHistoryPage)
 def student_history(db: DB, actor: Student, limit: Limit = 20, offset: Offset = 0):
-    scope = Team.owner_id == actor.id
-    total = db.scalar(select(func.count()).select_from(Proposal).join(Team).where(scope)) or 0
+    scope = ProposalParticipant.actor_id == actor.id
+    total = (
+        db.scalar(select(func.count()).select_from(Proposal).join(ProposalParticipant).where(scope))
+        or 0
+    )
     rows = db.execute(
         select(Proposal, Task)
-        .join(Team, Proposal.team_id == Team.id)
+        .join(ProposalParticipant, ProposalParticipant.proposal_id == Proposal.id)
         .join(Task, Proposal.task_id == Task.id)
         .where(scope)
         .order_by(Proposal.created_at.desc(), Proposal.id)

@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
+from app import teams as service
 from app.account_models import Account
 from app.api.dependencies import DB, Student
 from app.errors import DomainError
 from app.models import Actor, Team
-from app.proposals import current_team, team_view
-from app.schemas import ActorView, TeamInput, TeamView
+from app.schemas import (
+    ActorView,
+    TeamInput,
+    TeamInviteView,
+    TeamJoinInput,
+    TeamPublicView,
+    TeamView,
+)
 
 router = APIRouter(tags=["Teams"])
 
@@ -20,24 +27,42 @@ def actors(db: DB, request: Request):
     ).all()
 
 
-@router.get("/teams", response_model=list[TeamView])
+@router.get("/teams", response_model=list[TeamPublicView])
 def teams(db: DB):
-    return [team_view(db, team) for team in db.scalars(select(Team).order_by(Team.name))]
+    return [
+        service.public_team_view(db, team) for team in db.scalars(select(Team).order_by(Team.name))
+    ]
 
 
-@router.get("/teams/me", response_model=TeamView)
+@router.post("/teams", response_model=TeamView, status_code=201, response_model_exclude_none=True)
+def create_team(payload: TeamInput, db: DB, actor: Student):
+    team, code = service.create_team(db, actor, payload)
+    return service.team_view(db, team, actor, invite_code=code)
+
+
+@router.post("/teams/join", response_model=TeamView, response_model_exclude_none=True)
+def join_team(payload: TeamJoinInput, db: DB, actor: Student, request: Request):
+    request.app.state.auth_rate_limiter.check(f"team-invite:{actor.id}", 20)
+    team = service.join_team(db, actor, payload.name, payload.invite_code)
+    return service.team_view(db, team, actor)
+
+
+@router.get("/teams/me", response_model=TeamView, response_model_exclude_none=True)
 def my_team(db: DB, actor: Student):
-    return team_view(db, current_team(db, actor))
+    return service.team_view(db, service.current_team(db, actor), actor)
 
 
-@router.put("/teams/me", response_model=TeamView)
+@router.put("/teams/me", response_model=TeamView, response_model_exclude_none=True)
 def save_team(payload: TeamInput, db: DB, actor: Student):
-    team = db.scalar(select(Team).where(Team.owner_id == actor.id))
-    if team is None:
-        team = Team(owner_id=actor.id, **payload.model_dump())
-        db.add(team)
-    else:
-        for field, value in payload.model_dump().items():
-            setattr(team, field, value)
-    db.commit()
-    return team_view(db, team)
+    return service.team_view(db, service.update_team(db, actor, payload), actor)
+
+
+@router.post("/teams/me/invite", response_model=TeamInviteView)
+def rotate_invite(db: DB, actor: Student):
+    return TeamInviteView(invite_code=service.rotate_invite(db, actor))
+
+
+@router.post("/teams/me/leave")
+def leave_team(db: DB, actor: Student):
+    service.leave_team(db, actor)
+    return {"message": "Вы вышли из команды."}

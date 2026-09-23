@@ -13,6 +13,7 @@ import { TeamProfilePage, TeamProposalsPage, TeamProgressPage } from './pages/Te
 import { Button, EmptyState, Skeleton } from './components/ui';
 import { LoginPage, RegisterPage, ForgotPasswordPage, ResetPasswordPage } from './pages/AuthPages';
 import { BusinessProfilePage, BusinessHistoryPage, StudentHistoryPage } from './pages/ProfileHistoryPages';
+import { StudentProfilePage } from './pages/StudentProfilePage';
 function RoleGuard({role,children}:{role:'business'|'student';children:ReactNode}){const context=useRole();const location=useLocation();if(context.loading)return <div className="page"><Skeleton/></div>;if(!context.actor)return <Navigate to="/login" state={{from:location.pathname+location.search}} replace/>;return context.role===role?<>{children}</>:<Navigate to="/catalog" replace/>}
 export class ErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return {failed:true}}componentDidCatch(error:Error,_info:ErrorInfo){console.error('Ошибка интерфейса:',error)}render(){return this.state.failed?<main className="page"><EmptyState title="Не удалось отобразить страницу" description="Перезагрузите приложение. Сохранённые на сервере данные останутся доступными." action={<Button onClick={()=>window.location.reload()}>Перезагрузить</Button>}/></main>:this.props.children}}
 export function App(){const {actor}=useRole();return <Routes key={actor?.id||'loading'}><Route element={<Layout/>}>
@@ -31,6 +32,7 @@ export function App(){const {actor}=useRole();return <Routes key={actor?.id||'lo
  <Route path="business/profile" element={<RoleGuard role="business"><BusinessProfilePage/></RoleGuard>}/>
  <Route path="business/history" element={<RoleGuard role="business"><BusinessHistoryPage/></RoleGuard>}/>
  <Route path="student/history" element={<RoleGuard role="student"><StudentHistoryPage/></RoleGuard>}/>
+ <Route path="student/profile" element={<RoleGuard role="student"><StudentProfilePage/></RoleGuard>}/>
  <Route path="recommendations" element={<RoleGuard role="student"><CatalogPage recommendations/></RoleGuard>}/>
  <Route path="team/profile" element={<RoleGuard role="student"><TeamProfilePage/></RoleGuard>}/>
  <Route path="team/proposals" element={<RoleGuard role="student"><TeamProposalsPage/></RoleGuard>}/>

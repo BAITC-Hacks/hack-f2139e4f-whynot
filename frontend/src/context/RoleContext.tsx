@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, errorMessage, USE_MOCKS } from '../api/client';
-import type { Actor, Team } from '../types';
+import type { Actor, RegistrationInput, Team } from '../types';
 
 interface RoleValue {
   actor: Actor | null; actors: Actor[]; role: Actor['role']; team: Team | null; teams: Team[];
-  loading: boolean; error: string | null; selectActor: (id: string) => void;
+  loading: boolean; teamLoading:boolean; error: string | null; selectActor: (id: string) => void;
   refreshTeam: () => Promise<void>; retry: () => void;
   login: (email: string, password: string) => Promise<Actor>;
-  register: (input: { name: string; email: string; password: string; role: Actor['role'] }) => Promise<Actor>;
+  register: (input: RegistrationInput) => Promise<Actor>;
   logout: () => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
 }
@@ -19,13 +19,14 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const [teamLoading, setTeamLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0), teamGeneration = useRef(0), actorRef = useRef<Actor | null>(null);
 
   const applyActor = useCallback((next: Actor | null) => {
     teamGeneration.current++;
     actorRef.current = next;
-    setActor(next); setTeam(null); setTeams([]); setError(null);
+    setActor(next); setTeam(null); setTeams([]); setError(null); setTeamLoading(Boolean(next));
     if (!USE_MOCKS) setActors([]);
   }, []);
 
@@ -59,7 +60,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const refreshTeam = useCallback(async () => {
     const current = actorRef.current;
     const request = ++teamGeneration.current;
-    if (!current) { setTeam(null); setTeams([]); return; }
+    if (!current) { setTeam(null); setTeams([]); setTeamLoading(false); return; }
+    setTeamLoading(true);
     try {
       const nextTeams = await api.getTeams();
       let nextTeam: Team | null = null;
@@ -73,7 +75,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     } catch (caught) {
       if (request === teamGeneration.current && current.id === actorRef.current?.id) setError(errorMessage(caught));
       throw caught;
-    }
+    } finally { if (request === teamGeneration.current && current.id === actorRef.current?.id) setTeamLoading(false); }
   }, []);
   useEffect(() => { if (actor) void refreshTeam().catch(() => { /* Displayed in Layout. */ }); }, [actor?.id, refreshTeam]);
 
@@ -89,7 +91,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     if (request === generation.current) { applyActor(result.actor); setLoading(false); }
     return result.actor;
   }, [applyActor]);
-  const register = useCallback(async (input: { name: string; email: string; password: string; role: Actor['role'] }) => {
+  const register = useCallback(async (input: RegistrationInput) => {
     const request = ++generation.current;
     const result = await api.register(input);
     if (request === generation.current) { applyActor(result.actor); setLoading(false); }
@@ -104,6 +106,6 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     generation.current++; applyActor(null); setLoading(false);
   }, [applyActor]);
 
-  return <RoleContext.Provider value={{ actor, actors, role: actor?.role || 'business', team, teams, loading, error, selectActor, refreshTeam, retry: () => { void load(); }, login, register, logout, resetPassword }}>{children}</RoleContext.Provider>;
+  return <RoleContext.Provider value={{ actor, actors, role: actor?.role || 'business', team, teams, loading, teamLoading, error, selectActor, refreshTeam, retry: () => { void load(); }, login, register, logout, resetPassword }}>{children}</RoleContext.Provider>;
 }
 export function useRole() { const value = useContext(RoleContext); if (!value) throw new Error('RoleProvider не подключён.'); return value; }

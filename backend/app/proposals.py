@@ -1,47 +1,36 @@
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.errors import DomainError
-from app.models import Actor, Milestone, Proposal, Task, Team, now
-from app.schemas import DecisionInput, MilestoneInput, ProposalCreate, TeamView
+from app.models import Actor, Milestone, Proposal, Task, now
+from app.schemas import DecisionInput, MilestoneInput, ProposalCreate
+from app.student_profiles import require_student_profile
+from app.team_models import ProposalParticipant
+from app.teams import current_team, lock_team, member_ids, require_team_leader
 
 MILESTONE_POINTS = {"prototype": 20, "pilot": 30, "delivery": 50}
-
-
-def current_team(db: Session, actor: Actor) -> Team:
-    team = db.scalar(select(Team).where(Team.owner_id == actor.id))
-    if team is None:
-        raise DomainError(409, "TEAM_REQUIRED", "Сначала создайте профиль команды.")
-    return team
-
-
-def team_view(db: Session, team: Team) -> TeamView:
-    points = db.scalar(
-        select(func.coalesce(func.sum(Milestone.points), 0))
-        .join(
-            Proposal,
-            Milestone.proposal_id == Proposal.id,
-        )
-        .where(Proposal.team_id == team.id)
-    )
-    return TeamView(
-        id=team.id,
-        owner_id=team.owner_id,
-        name=team.name,
-        interests=team.interests,
-        skills=team.skills,
-        technologies=team.technologies,
-        points=points,
-    )
 
 
 def create_proposal(db: Session, actor: Actor, task_id: str, payload: ProposalCreate) -> Proposal:
     task = db.get(Task, task_id)
     if task is None or task.published_revision is None:
         raise DomainError(404, "TASK_NOT_FOUND", "Опубликованная задача не найдена.")
+    require_student_profile(db, actor)
     team = current_team(db, actor)
+    require_team_leader(team, actor)
+    lock_team(db, team)
+    participants = member_ids(db, team)
+    if not 3 <= len(participants) <= 5:
+        raise DomainError(409, "TEAM_NOT_READY", "Для отклика соберите команду из 3–5 участников.")
     proposal = Proposal(task_id=task.id, team_id=team.id, **payload.model_dump(mode="json"))
     db.add(proposal)
+    db.flush()
+    db.add_all(
+        [
+            ProposalParticipant(proposal_id=proposal.id, actor_id=actor_id)
+            for actor_id in participants
+        ]
+    )
     db.commit()
     return proposal
 

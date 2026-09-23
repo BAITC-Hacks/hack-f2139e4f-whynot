@@ -4,6 +4,8 @@ import { CheckCircle2, LockKeyhole, LogIn } from 'lucide-react';
 import { api, errorMessage, USE_MOCKS } from '../api/client';
 import { Button, Card, ErrorBanner, Input, PageHeader, Select } from '../components/ui';
 import { useRole } from '../context/RoleContext';
+import { StudentProfileFields } from '../components/StudentProfileFields';
+import { studentDraft, studentProfileInput, validateStudentProfile, type StudentProfileErrors } from '../ui/studentProfile';
 import type { Actor } from '../types';
 
 function AuthFrame({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
@@ -35,21 +37,26 @@ export function RegisterPage() {
   const { actor, register } = useRole();
   const location = useLocation(), navigate = useNavigate();
   const [role, setRole] = useState<Actor['role']>('business');
+  const [student,setStudent]=useState(studentDraft);
+  const [studentErrors,setStudentErrors]=useState<StudentProfileErrors>({});
   const [name, setName] = useState(''), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy) return;
     if (!name.trim()) { setError('Укажите имя или название бизнеса.'); return; }
     if (password !== confirmation) { setError('Пароли не совпадают.'); return; }
+    const studentInput=studentProfileInput(student);
+    const validation=role==='student'?validateStudentProfile(studentInput):{};
+    setStudentErrors(validation);if(Object.keys(validation).length)return;
     setBusy(true); setError('');
     try {
-      const registered = await register({ name: name.trim(), email: email.trim(), password, role });
+      const registered = await register(role==='student'?{name:name.trim(),email:email.trim(),password,role,...studentInput}:{ name: name.trim(), email: email.trim(), password, role });
       navigate(destination(location.state, registered.role === 'business' ? '/business/profile' : '/team/profile'), { replace: true });
     } catch (caught) { setError(errorMessage(caught)); }
     finally { setBusy(false); }
   }
   if (actor && !USE_MOCKS) return <Navigate to={destination(location.state, actor.role === 'business' ? '/business/profile' : '/team/profile')} replace />;
-  return <AuthFrame title="Создать аккаунт" subtitle="Бизнес публикует задачи, студенты предлагают решения и сохраняют результаты."><form className="stack" onSubmit={submit}><Select label="Я регистрируюсь как" value={role} onChange={event => setRole(event.target.value as Actor['role'])}><option value="business">Представитель бизнеса</option><option value="student">Студент</option></Select><Input label={role === 'business' ? 'Название бизнеса' : 'Ваше имя'} autoComplete={role === 'business' ? 'organization' : 'name'} required maxLength={120} value={name} onChange={event => setName(event.target.value)} /><Input label="Email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} /><Input label="Пароль" type="password" autoComplete="new-password" required minLength={12} maxLength={128} hint="Не менее 12 символов." value={password} onChange={event => setPassword(event.target.value)} /><Input label="Повторите пароль" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} />{error && <ErrorBanner message={error} />}<Button type="submit" loading={busy}>Зарегистрироваться</Button></form><p className="muted">Уже зарегистрированы? <Link to="/login" state={location.state}>Войти</Link></p></AuthFrame>;
+  return <AuthFrame title="Создать аккаунт" subtitle="Бизнес публикует задачи, студенты объединяются в команды и предлагают решения."><form className="stack" onSubmit={submit}><Select label="Я регистрируюсь как" disabled={busy} value={role} onChange={event => setRole(event.target.value as Actor['role'])}><option value="business">Представитель бизнеса</option><option value="student">Студент</option></Select><Input label={role === 'business' ? 'Название бизнеса' : 'Ваше имя'} autoComplete={role === 'business' ? 'organization' : 'name'} required maxLength={120} disabled={busy} value={name} onChange={event => setName(event.target.value)} /><Input label="Email" type="email" autoComplete="username" required maxLength={254} disabled={busy} value={email} onChange={event => setEmail(event.target.value)} />{role==='student'&&<StudentProfileFields value={student} onChange={setStudent} errors={studentErrors} disabled={busy}/>}<Input label="Пароль" type="password" autoComplete="new-password" required minLength={12} maxLength={128} hint="Не менее 12 символов." disabled={busy} value={password} onChange={event => setPassword(event.target.value)} /><Input label="Повторите пароль" type="password" autoComplete="new-password" required minLength={12} maxLength={128} disabled={busy} value={confirmation} onChange={event => setConfirmation(event.target.value)} />{error && <ErrorBanner message={error} />}<Button type="submit" loading={busy}>Зарегистрироваться</Button></form><p className="muted">Уже зарегистрированы? <Link to="/login" state={location.state}>Войти</Link></p></AuthFrame>;
 }
 
 export function ForgotPasswordPage() {

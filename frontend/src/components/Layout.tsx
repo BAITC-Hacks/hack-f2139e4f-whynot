@@ -21,6 +21,7 @@ const navItems = {
     { to: '/recommendations', label: 'Для вашей команды', icon: Compass },
     { to: '/team/proposals', label: 'Мои отклики', icon: Send },
     { to: '/team/profile', label: 'Моя команда', icon: Users },
+    { to: '/student/profile', label: 'Мой профиль', icon: GraduationCap },
     { to: '/team/progress', label: 'Мой прогресс', icon: Trophy },
     { to: '/student/history', label: 'История и результаты', icon: History },
   ],

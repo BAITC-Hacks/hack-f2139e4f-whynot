@@ -116,21 +116,22 @@ class AuthRateLimiter:
     """Per-process IP and account limits; use a shared store for multiple workers."""
 
     def __init__(self):
-        self._events: dict[str, deque[float]] = {}
+        self._events: dict[tuple[str, int], deque[float]] = {}
         self._lock = Lock()
 
     def check(self, key: str, limit: int, window: int = 15 * 60) -> None:
         current = monotonic()
+        bucket = (key, window)
         with self._lock:
             for expired_key in [
                 item
                 for item, events in self._events.items()
-                if not events or events[-1] <= current - window
+                if not events or events[-1] <= current - item[1]
             ]:
                 self._events.pop(expired_key, None)
-            if key not in self._events and len(self._events) >= 10000:
+            if bucket not in self._events and len(self._events) >= 10000:
                 raise DomainError(429, "RATE_LIMITED", "Повторите попытку позже.")
-            events = self._events.setdefault(key, deque())
+            events = self._events.setdefault(bucket, deque())
             while events and events[0] <= current - window:
                 events.popleft()
             if len(events) >= limit:

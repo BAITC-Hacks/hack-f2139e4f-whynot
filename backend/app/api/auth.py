@@ -28,19 +28,22 @@ from app.auth_schemas import (
 )
 from app.config import Settings
 from app.errors import DomainError
-from app.models import Actor, Team, new_id
+from app.models import Actor, new_id
+from app.student_profiles import StudentProfile
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 logger = logging.getLogger(__name__)
 
 
-def _view(actor: Actor, account: Account) -> dict:
+def _view(db, actor: Actor, account: Account) -> dict:
+    profile = db.get(StudentProfile, actor.id) if actor.role == "student" else None
     return {
         "actor": {
             "id": actor.id,
             "name": actor.name,
             "role": actor.role,
             "email": account.email,
+            "username": profile.username if profile else None,
         }
     }
 
@@ -66,6 +69,10 @@ def register(payload: RegisterInput, request: Request, response: Response, db: D
         raise DomainError(
             409, "ACCOUNT_EXISTS", "Этот адрес уже зарегистрирован. Войдите в аккаунт."
         )
+    if payload.username and db.scalar(
+        select(StudentProfile.actor_id).where(StudentProfile.username == payload.username)
+    ):
+        raise DomainError(409, "USERNAME_TAKEN", "Этот ID уже занят. Придумайте другой.")
     actor = Actor(id=new_id(), name=payload.name, role=payload.role)
     try:
         db.add(actor)
@@ -73,16 +80,30 @@ def register(payload: RegisterInput, request: Request, response: Response, db: D
         account = Account(actor_id=actor.id, email=payload.email, password_hash=password_hash)
         db.add(account)
         if actor.role == "student":
-            db.add(Team(owner_id=actor.id, name=actor.name))
+            db.add(
+                StudentProfile(
+                    actor_id=actor.id,
+                    username=payload.username,
+                    phone=payload.phone,
+                    positions=payload.positions,
+                    skills=payload.skills,
+                )
+            )
         db.flush()
         revoke_session(db, request.cookies.get(SESSION_COOKIE))
         token = new_session(db, actor.id, request.app.state.settings)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
+        if payload.username and db.scalar(
+            select(StudentProfile.actor_id).where(StudentProfile.username == payload.username)
+        ):
+            raise DomainError(
+                409, "USERNAME_TAKEN", "Этот ID уже занят. Придумайте другой."
+            ) from exc
         raise DomainError(409, "ACCOUNT_EXISTS", "Этот адрес уже зарегистрирован.") from exc
     _set_session(response, token, request.app.state.settings)
-    return _view(actor, account)
+    return _view(db, actor, account)
 
 
 @router.post("/login", response_model=AuthView)
@@ -111,7 +132,7 @@ def login(payload: LoginInput, request: Request, response: Response, db: DB):
     token = new_session(db, actor.id, request.app.state.settings)
     db.commit()
     _set_session(response, token, request.app.state.settings)
-    return _view(actor, account)
+    return _view(db, actor, account)
 
 
 @router.get("/me", response_model=AuthView)
@@ -120,7 +141,7 @@ def me(request: Request, response: Response, db: DB):
     if actor is None:
         raise DomainError(401, "LOGIN_REQUIRED", "Войдите в аккаунт.")
     response.headers["Cache-Control"] = "no-store"
-    return _view(actor, db.get(Account, actor.id))
+    return _view(db, actor, db.get(Account, actor.id))
 
 
 @router.post("/logout", response_model=MessageView)

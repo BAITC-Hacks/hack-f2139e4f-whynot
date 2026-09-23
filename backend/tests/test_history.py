@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from test_workflow import ensure_ready_team
 
 from app.ai import Assistant
 from app.business_profiles import business_ai_context
@@ -50,12 +51,7 @@ def publish_card(client, full_card, actor_id="business-1"):
 
 def submit_proposal(client, task, student="student-1"):
     headers = actor_headers(student)
-    response = client.put(
-        "/api/v1/teams/me",
-        headers=headers,
-        json={"name": student, "interests": [], "skills": ["Python"], "technologies": []},
-    )
-    assert response.status_code == 200, response.text
+    ensure_ready_team(client, student)
     response = client.post(
         f"/api/v1/tasks/{task['id']}/proposals",
         headers=headers,

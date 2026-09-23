@@ -118,10 +118,38 @@ class TeamInput(Schema):
     technologies: list[Tag] = Field(default_factory=list, max_length=30)
 
 
-class TeamView(TeamInput):
+class TeamPublicView(TeamInput):
     id: str
     owner_id: str
     points: int = 0
+    member_count: int = 0
+    ready: bool = False
+
+
+class TeamMemberView(Schema):
+    actor_id: str
+    name: str
+    username: str | None = None
+    positions: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    is_leader: bool
+
+
+class TeamView(TeamPublicView):
+    members: list[TeamMemberView] = Field(default_factory=list)
+    is_leader: bool = False
+    invite_code: str | None = None
+
+
+class TeamJoinInput(Schema):
+    name: ShortText
+    invite_code: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=4, max_length=100)
+    ]
+
+
+class TeamInviteView(Schema):
+    invite_code: str
 
 
 class ProposalCreate(Schema):

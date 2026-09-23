@@ -1,7 +1,10 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+
+from app.schemas import Tag
+from app.student_profiles import Phone, Position, Username, distinct_labels
 
 
 class EmailInput(BaseModel):
@@ -26,6 +29,27 @@ class RegisterInput(EmailInput):
     name: str = Field(min_length=2, max_length=200)
     password: SecretStr = Field(min_length=12, max_length=128)
     role: Literal["business", "student"]
+    username: Username | None = None
+    phone: Phone | None = None
+    positions: list[Position] = Field(default_factory=list, max_length=10)
+    skills: list[Tag] = Field(default_factory=list, max_length=30)
+
+    @field_validator("positions", "skills")
+    @classmethod
+    def unique_labels(cls, value: list[str]) -> list[str]:
+        return distinct_labels(value)
+
+    @model_validator(mode="after")
+    def student_details(self):
+        if self.role == "student" and not all(
+            (self.username, self.phone, self.positions, self.skills)
+        ):
+            raise ValueError("Для студента обязательны ID, телефон, специальности и навыки.")
+        if self.role == "business" and any(
+            (self.username, self.phone, self.positions, self.skills)
+        ):
+            raise ValueError("Данные студента заполняются только для роли студента.")
+        return self
 
     @field_validator("name")
     @classmethod
@@ -48,6 +72,7 @@ class AccountActorView(BaseModel):
     name: str
     role: Literal["business", "student"]
     email: str
+    username: str | None = None
 
 
 class AuthView(BaseModel):
