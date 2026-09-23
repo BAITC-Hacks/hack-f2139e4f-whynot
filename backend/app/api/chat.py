@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import StringConstraints, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import DB, current_actor
@@ -13,6 +13,7 @@ from app.models import Actor, Proposal, Task, Team
 from app.schemas import Schema
 from app.student_profiles import StudentProfile
 from app.team_models import TeamMembership
+from app.teams import lock_team
 
 
 def private_response(response: Response) -> None:
@@ -94,6 +95,22 @@ def send_message(
     proposal_id: str, payload: MessageInput, db: DB, actor: Participant, request: Request
 ):
     proposal = participant_proposal(db, actor, proposal_id)
+    # Keep authorization valid until the message is committed. Roster changes use
+    # the same team lock; decisions acquire the proposal row's write lock.
+    if actor.role == "student":
+        lock_team(db, db.get(Team, proposal.team_id))
+        membership_team = db.scalar(
+            select(TeamMembership.team_id).where(TeamMembership.actor_id == actor.id)
+        )
+        if membership_team != proposal.team_id:
+            raise DomainError(404, "PROPOSAL_NOT_FOUND", "Отклик не найден или недоступен.")
+    db.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id)
+        .values(status=Proposal.status)
+        .execution_options(synchronize_session=False)
+    )
+    db.refresh(proposal)
     if proposal.status == "rejected":
         raise DomainError(409, "CHAT_READ_ONLY", "Отклик отклонён. Чат доступен для чтения.")
     request.app.state.auth_rate_limiter.check(f"chat:{actor.id}", 30, window=60)

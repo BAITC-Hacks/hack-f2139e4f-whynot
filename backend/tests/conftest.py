@@ -1,9 +1,34 @@
+import smtplib
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
 from app.models import Actor
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings_and_transports(request, monkeypatch):
+    """Tests must not use the developer's credentials or contact real providers."""
+    for field in Settings.model_fields:
+        monkeypatch.delenv(field.upper(), raising=False)
+        monkeypatch.delenv(field.lower(), raising=False)
+    # Config tests deliberately supply temporary dotenv files and verify the default path.
+    if request.path.name != "test_config.py":
+        monkeypatch.setitem(Settings.model_config, "env_file", None)
+
+    def deny_network(*_args, **_kwargs):
+        raise AssertionError("External HTTP/SMTP is disabled in tests; mock the provider.")
+
+    async def deny_async_network(*_args, **_kwargs):
+        deny_network()
+
+    # TestClient has its own ASGI transport, so local API requests still work.
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", deny_network)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", deny_async_network)
+    monkeypatch.setattr(smtplib.SMTP, "connect", deny_network)
 
 
 @pytest.fixture

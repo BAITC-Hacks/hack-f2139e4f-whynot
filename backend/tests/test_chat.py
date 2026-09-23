@@ -175,6 +175,44 @@ def test_rejected_proposal_chat_is_read_only(client, app, chat_setup):
 
 
 @pytest.mark.parametrize(
+    ("actor_id", "change", "expected_status", "expected_code"),
+    [
+        ("business-1", "reject", 409, "CHAT_READ_ONLY"),
+        ("chat-member", "reject", 409, "CHAT_READ_ONLY"),
+        ("chat-member", "leave", 404, "PROPOSAL_NOT_FOUND"),
+    ],
+)
+def test_message_rechecks_committed_decision_and_membership_before_writing(
+    client, app, chat_setup, monkeypatch, actor_id, change, expected_status, expected_code
+):
+    from app.api import chat
+
+    original = chat.participant_proposal
+    changed = False
+
+    def authorize_then_change(db, actor, proposal_id):
+        nonlocal changed
+        proposal = original(db, actor, proposal_id)
+        if not changed:
+            changed = True
+            # Reproduce another request committing after the initial permission check.
+            with app.state.session_factory() as other:
+                if change == "reject":
+                    other.get(Proposal, proposal_id).status = "rejected"
+                else:
+                    other.delete(other.get(TeamMembership, actor.id))
+                other.commit()
+        return proposal
+
+    monkeypatch.setattr(chat, "participant_proposal", authorize_then_change)
+    response = send(client, actor_id, "Сообщение после изменения доступа")
+    assert response.status_code == expected_status
+    assert response.json()["error"]["code"] == expected_code
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(ChatMessage)) == 0
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         {"body": ""},
