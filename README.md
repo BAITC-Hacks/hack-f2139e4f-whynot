@@ -285,6 +285,13 @@ Seed использует синтетические данные; ссылки 
 `OPENAI_MODEL=gpt-4o-mini`, `OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe`.
 Перезапустите backend. Не помещайте ключ во frontend или переменные `VITE_*`.
 
+API-ключ создаётся отдельно в [API keys](https://platform.openai.com/api-keys).
+Промокод из раздела **Billing → Promotions** не заменяет API-ключ и не подходит
+для `OPENAI_API_KEY`. Если у вас есть промокод на кредиты, активируйте его в панели
+OpenAI, затем создайте API-ключ для проекта в нужной организации и сохраните только
+ключ в локальном `backend/.env`. Создание ключа описано в
+[официальной инструкции OpenAI](https://developers.openai.com/api/docs/quickstart).
+
 Backend всегда читает `.env` именно из каталога `backend`, независимо от папки
 запуска. Поддерживается UTF-8 с BOM из Windows-редакторов. Переменные окружения
 процесса имеют приоритет над файлом; пустой `OPENAI_API_KEY` в окружении также
