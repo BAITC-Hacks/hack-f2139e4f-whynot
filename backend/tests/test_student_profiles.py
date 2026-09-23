@@ -10,7 +10,7 @@ from app.models import Actor, Team
 from app.student_profiles import StudentProfile
 
 ORIGIN = "http://127.0.0.1:5173"
-PASSWORD = "correct horse battery staple"
+PASSWORD = "quiet willow orbit amber lantern"
 
 
 @pytest.fixture

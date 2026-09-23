@@ -21,6 +21,7 @@ from app.account_models import Account, LoginSession, PasswordReset
 from app.config import Settings
 from app.errors import DomainError
 from app.models import Actor, now
+from app.passwords import normalize_password, require_password_policy
 
 SESSION_COOKIE = "ai_sana_session"
 # Scrypt consumes ~128 MiB per call. Bound concurrency even under login floods.
@@ -43,21 +44,24 @@ def _derive_password(password: str, salt: bytes) -> bytes:
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    return f"scrypt$131072$8$1${salt.hex()}${_derive_password(password, salt).hex()}"
+    normalized = normalize_password(password)
+    return f"scrypt-nfc$131072$8$1${salt.hex()}${_derive_password(normalized, salt).hex()}"
 
 
 def verify_password(password: str, stored: str | None) -> bool:
     # Missing accounts still pay the same hashing cost as a bad password.
-    if stored is None:
-        _derive_password(password, _dummy_salt)
-        return False
     try:
-        algorithm, n, r, p, salt, expected = stored.split("$")
-        if (algorithm, n, r, p) != ("scrypt", "131072", "8", "1"):
+        if stored is None:
+            _derive_password(normalize_password(password), _dummy_salt)
             return False
+        algorithm, n, r, p, salt, expected = stored.split("$")
+        if algorithm not in {"scrypt", "scrypt-nfc"} or (n, r, p) != ("131072", "8", "1"):
+            return False
+        if algorithm == "scrypt-nfc":
+            password = normalize_password(password)
         actual = _derive_password(password, bytes.fromhex(salt))
         return hmac.compare_digest(actual.hex(), expected)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, DomainError):
         return False
 
 
@@ -194,6 +198,7 @@ def issue_password_reset(db: Session, account: Account) -> str:
 
 
 def reset_password(db: Session, token: str, password: str) -> None:
+    password = require_password_policy(password)
     digest = token_digest(token)
     reset = db.scalar(
         select(PasswordReset).where(

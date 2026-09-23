@@ -1,4 +1,4 @@
-import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, MessagePage, Milestone, MilestoneCode, Proposal, ProposalContact, ProposalInput, ProposalMessage, Question, RegistrationInput, StudentProfile, StudentProfileInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
+import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, MessagePage, Milestone, MilestoneCode, PasswordStrength, Proposal, ProposalContact, ProposalInput, ProposalMessage, Question, RegistrationInput, StudentProfile, StudentProfileInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { ApiError } from './errors';
 export { ApiError, errorMessage } from './errors';
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
@@ -21,20 +21,23 @@ Object.assign(messages, {
  TEAM_FULL:'В команде уже 5 участников.', TEAM_ALREADY_JOINED:'Вы уже состоите в команде.', TEAM_ALREADY_EXISTS:'Вы уже состоите в команде.',
  INVALID_INVITE:'Название команды или код приглашения не совпадают.', INVITE_INVALID:'Название команды или код приглашения не совпадают.',
  TEAM_NAME_TAKEN:'Это название команды уже занято.', CHAT_READ_ONLY:'Предложение отклонено. Переписка доступна только для чтения.',
+ WEAK_PASSWORD:'Пароль должен содержать от 15 до 128 символов и не входить в список распространённых паролей. Выберите более длинную уникальную фразу.',
 });
-async function request<T>(path:string,actorId?:string,method='GET',body?:unknown,timeoutMs=45000):Promise<T>{
+async function request<T>(path:string,actorId?:string,method='GET',body?:unknown,timeoutMs=45000,signal?:AbortSignal):Promise<T>{
  if(USE_MOCKS && (path.startsWith('/auth/') || path==='/ai/transcribe' || path.startsWith('/students/') || /\/proposals\/[^/]+\/(messages|contact)/.test(path) || path==='/teams/join' || path==='/teams/me/invite' || path==='/teams/me/leave' || path==='/teams'&&method==='POST'))throw new ApiError('Эта функция доступна при подключении к серверу. Сейчас включён демонстрационный режим.','DEMO_ONLY');
  if(USE_MOCKS){try{const {mockRequest}=await import('./mocks');return await mockRequest<T>(path,actorId,method,body)}catch(error){throw error instanceof ApiError?error:new ApiError('Не удалось обработать запрос в мок-режиме.')}}
  const multipart=typeof FormData!=='undefined' && body instanceof FormData;
  const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),timeoutMs);
+ const cancel=()=>abort.abort();
+ if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
  try {
-  const response=await fetch(API_BASE_URL+path,{method,credentials:'include',headers:{Accept:'application/json',...(body!==undefined&&!multipart?{'Content-Type':'application/json'}:{})},body:body===undefined?undefined:multipart?body as FormData:JSON.stringify(body),signal:abort.signal});
+  const response=await fetch(API_BASE_URL+path,{method,credentials:'include',cache:path==='/auth/password-strength'?'no-store':undefined,headers:{Accept:'application/json',...(body!==undefined&&!multipart?{'Content-Type':'application/json'}:{})},body:body===undefined?undefined:multipart?body as FormData:JSON.stringify(body),signal:abort.signal});
   if(response.status===401&&!path.startsWith('/auth/')&&typeof window!=='undefined')window.dispatchEvent(new Event('auth:expired'));
   let payload:unknown;try{payload=await response.json()}catch{throw new ApiError('Сервер вернул некорректный ответ. Проверьте адрес API.','INVALID_RESPONSE',response.status)}
   if(!response.ok){const details=(payload as {error?:{code?:string;message?:string}})?.error;const code=details?.code||'REQUEST_FAILED';const text=messages[code]||(details?.message&&/[А-Яа-яЁё]/.test(details.message)?details.message:`Не удалось выполнить запрос (код ${response.status}). Попробуйте ещё раз.`);throw new ApiError(text,code,response.status)}
   return payload as T;
- } catch(error){if(error instanceof ApiError)throw error;if(error instanceof DOMException&&error.name==='AbortError')throw new ApiError('Сервер отвечает слишком долго. Попробуйте ещё раз.','TIMEOUT');throw new ApiError('Нет соединения с сервером. Проверьте, что backend запущен, и повторите запрос.','NETWORK_ERROR')}
- finally{clearTimeout(timeout)}
+ } catch(error){if(signal?.aborted)throw new DOMException('Запрос отменён.','AbortError');if(error instanceof ApiError)throw error;if(error instanceof DOMException&&error.name==='AbortError')throw new ApiError('Сервер отвечает слишком долго. Попробуйте ещё раз.','TIMEOUT');throw new ApiError('Нет соединения с сервером. Проверьте, что backend запущен, и повторите запрос.','NETWORK_ERROR')}
+ finally{clearTimeout(timeout);signal?.removeEventListener('abort',cancel)}
 }
 export { request as apiRequest };
 const id=(value:string)=>encodeURIComponent(value);
@@ -42,6 +45,7 @@ export const api={
  me:()=>request<{actor:Actor}>('/auth/me'),
  login:(input:{email:string;password:string})=>request<{actor:Actor}>('/auth/login',undefined,'POST',input),
  register:(input:RegistrationInput)=>request<{actor:Actor}>('/auth/register',undefined,'POST',input),
+ passwordStrength:(password:string,signal?:AbortSignal)=>request<PasswordStrength>('/auth/password-strength',undefined,'POST',{password},10000,signal),
  logout:()=>request<{message:string}>('/auth/logout',undefined,'POST'),
  forgotPassword:(email:string)=>request<{message:string;delivery?:'file'|'smtp'}>('/auth/forgot-password',undefined,'POST',{email}),
  resetPassword:(token:string,password:string)=>request<{message:string}>('/auth/reset-password',undefined,'POST',{token,password}),

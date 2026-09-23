@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from app.passwords import MAX_PASSWORD_INPUT_LENGTH
 from app.schemas import Tag
 from app.student_profiles import Phone, Position, Username, distinct_labels
 
@@ -22,12 +23,12 @@ class EmailInput(BaseModel):
 
 
 class LoginInput(EmailInput):
-    password: SecretStr = Field(min_length=1, max_length=128)
+    password: SecretStr = Field(min_length=1, max_length=MAX_PASSWORD_INPUT_LENGTH)
 
 
 class RegisterInput(EmailInput):
     name: str = Field(min_length=2, max_length=200)
-    password: SecretStr = Field(min_length=12, max_length=128)
+    password: SecretStr = Field(max_length=MAX_PASSWORD_INPUT_LENGTH)
     role: Literal["business", "student"]
     username: Username | None = None
     phone: Phone | None = None
@@ -64,7 +65,7 @@ class ResetPasswordInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: SecretStr = Field(min_length=20, max_length=200)
-    password: SecretStr = Field(min_length=12, max_length=128)
+    password: SecretStr = Field(max_length=MAX_PASSWORD_INPUT_LENGTH)
 
 
 class AccountActorView(BaseModel):

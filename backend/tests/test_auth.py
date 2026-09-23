@@ -16,7 +16,7 @@ from app.main import create_app
 from app.models import Actor, Team, now
 
 ORIGIN = "http://127.0.0.1:5173"
-PASSWORD = "correct horse battery staple"
+PASSWORD = "quiet willow orbit amber lantern"
 NEW_PASSWORD = "replacement secure passphrase"
 
 
@@ -91,7 +91,7 @@ def test_register_cookie_and_hash_keep_password_and_token_private(auth_client, a
     token = auth_client.cookies[SESSION_COOKIE]
     with auth_app.state.session_factory() as db:
         account = db.get(Account, actor["id"])
-        assert account.password_hash.startswith("scrypt$131072$8$1$")
+        assert account.password_hash.startswith("scrypt-nfc$131072$8$1$")
         assert PASSWORD not in account.password_hash
         assert verify_password(PASSWORD, account.password_hash)
         assert db.get(LoginSession, token) is None

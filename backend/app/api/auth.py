@@ -29,6 +29,12 @@ from app.auth_schemas import (
 from app.config import Settings
 from app.errors import DomainError
 from app.models import Actor, new_id
+from app.passwords import (
+    PasswordStrengthInput,
+    PasswordStrengthView,
+    password_strength,
+    require_password_policy,
+)
 from app.student_profiles import StudentProfile
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -64,7 +70,7 @@ def _set_session(response: Response, token: str, settings: Settings) -> None:
 @router.post("/register", response_model=AuthView, status_code=201)
 def register(payload: RegisterInput, request: Request, response: Response, db: DB):
     limit_auth(request, "register", payload.email)
-    password_hash = hash_password(payload.password.get_secret_value())
+    password_hash = hash_password(require_password_policy(payload.password.get_secret_value()))
     if db.scalar(select(Account).where(Account.email == payload.email)):
         raise DomainError(
             409, "ACCOUNT_EXISTS", "Этот адрес уже зарегистрирован. Войдите в аккаунт."
@@ -104,6 +110,13 @@ def register(payload: RegisterInput, request: Request, response: Response, db: D
         raise DomainError(409, "ACCOUNT_EXISTS", "Этот адрес уже зарегистрирован.") from exc
     _set_session(response, token, request.app.state.settings)
     return _view(db, actor, account)
+
+
+@router.post("/password-strength", response_model=PasswordStrengthView)
+def strength(payload: PasswordStrengthInput, request: Request):
+    peer = request.client.host if request.client else "unknown"
+    request.app.state.auth_rate_limiter.check(f"ip:password-strength:{peer}", 60, window=60)
+    return password_strength(payload.password.get_secret_value())
 
 
 @router.post("/login", response_model=AuthView)

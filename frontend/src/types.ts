@@ -18,6 +18,12 @@ export interface Team extends TeamInput { id:string; owner_id:string; points:num
 export interface ProposalContact { name:string; username:string|null; phone:string }
 export interface ProposalMessage { id:number; proposal_id:string; sender_id:string; sender_name:string; sender_role:'business'|'student'; body:string; created_at:string }
 export interface MessagePage { items:ProposalMessage[]; has_more:boolean }
+export interface PasswordStrength {
+ score:0|1|2|3|4; level:'weak'|'fair'|'strong'; label:string; acceptable:boolean;
+ length:number; min_length:number; max_length:number;
+ checks:Array<{code:'min_length'|'max_length'|'not_common';passed:boolean;message:string}>;
+ suggestions:string[];
+}
 export interface ProposalInput { idea:string; plan:string; timeline:string; prototype_url:string|null }
 export interface Proposal extends ProposalInput { id:string; task_id:string; team_id:string; status:'pending'|'accepted'|'rejected'; decision_note:string; created_at:string; decided_at:string|null }
 export type MilestoneCode = 'prototype'|'pilot'|'delivery';

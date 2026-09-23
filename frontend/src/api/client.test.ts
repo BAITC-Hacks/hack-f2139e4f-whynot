@@ -8,6 +8,15 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Сессия и голосовой ввод через API', () => {
+  it('проверяет пароль через JSON POST своего backend без URL-параметров и кеширования',async()=>{
+    const fetcher=vi.fn().mockResolvedValue(new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
+    const {api}=await import('./client');const candidate='  Unicode e\u0301 phrase  ';await api.passwordStrength(candidate);
+    expect(fetcher.mock.calls[0][0]).toBe('/api/v1/auth/password-strength');expect(fetcher.mock.calls[0][1]).toMatchObject({method:'POST',credentials:'include',cache:'no-store'});expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({password:candidate});
+  });
+  it('отменяет preview пароля по внешнему сигналу без ошибки таймаута',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockImplementation((_url:string,options:RequestInit)=>new Promise((_resolve,reject)=>{options.signal?.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true})})));
+    const {api}=await import('./client');const controller=new AbortController();const request=api.passwordStrength('test candidate',controller.signal);controller.abort();await expect(request).rejects.toMatchObject({name:'AbortError'});
+  });
   it('передаёт профиль студента при регистрации и код приглашения через JSON POST',async()=>{
     const fetcher=vi.fn().mockImplementation(async()=>new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
     const {api}=await import('./client');
