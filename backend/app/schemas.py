@@ -163,20 +163,21 @@ class MilestoneView(MilestoneInput):
     confirmed_at: datetime
 
 
-class AssistInput(Schema):
-    answers: dict[CardField, RequiredText] = Field(default_factory=dict, max_length=11)
-
-    @model_validator(mode="after")
-    def validate_card_field_lengths(self):
-        Card.model_validate(self.answers)
-        return self
-
-
 class Question(Schema):
     field: CardField
     question: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=5, max_length=1000)
     ]
+
+
+class AssistInput(Schema):
+    answers: dict[CardField, RequiredText] = Field(default_factory=dict, max_length=11)
+    previous_questions: list[Question] = Field(default_factory=list, max_length=40)
+
+    @model_validator(mode="after")
+    def validate_card_field_lengths(self):
+        Card.model_validate(self.answers)
+        return self
 
 
 class AIQuestions(Schema):

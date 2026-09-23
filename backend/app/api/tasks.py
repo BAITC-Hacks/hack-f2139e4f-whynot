@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 
 from app import tasks
-from app.ai import SYSTEM_PROMPT
+from app.ai import SYSTEM_PROMPT, build_assist_source
 from app.api.dependencies import DB, Business
 from app.errors import DomainError
 from app.models import Task
@@ -86,11 +86,17 @@ def ai_contract(request: Request):
     return {
         "provider": request.app.state.settings.ai_provider,
         "system_prompt": SYSTEM_PROMPT,
+        "request_schema": AssistInput.model_json_schema(),
         "input": {
             "raw_description": "string",
             "card": Card.model_json_schema(),
             "missing_fields": ["data", "success_criteria", "expected_result"],
         },
+        "input_example": build_assist_source(
+            "Хотим заранее понимать, какие товары заканчиваются в магазине.",
+            Card(topic="retail", data="CSV продаж за 6 месяцев"),
+            AssistInput(answers={"data": "CSV продаж за 6 месяцев"}),
+        ),
         "output_schema": AIQuestions.model_json_schema(),
         "fallback": "stub with provider=stub and a non-empty fallback_reason on provider failure",
     }

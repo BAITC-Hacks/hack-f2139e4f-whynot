@@ -1,4 +1,4 @@
-import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
+import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Question, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { ApiError } from './errors';
 export { ApiError, errorMessage } from './errors';
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
@@ -21,7 +21,7 @@ export const api={
  createTask:(actorId:string,input:TaskCreateInput)=>request<Task>('/tasks',actorId,'POST',input),
  getMyTasks:(actorId:string)=>request<Task[]>('/tasks/mine',actorId),
  getTask:(actorId:string,taskId:string)=>request<Task>(`/tasks/${id(taskId)}`,actorId),
- assistTask:(actorId:string,taskId:string,answers:Partial<Record<CardField,string>>={})=>request<AssistResult>(`/tasks/${id(taskId)}/assist`,actorId,'POST',{answers}),
+ assistTask:(actorId:string,taskId:string,answers:Partial<Record<CardField,string>>={},previousQuestions:Question[]=[])=>request<AssistResult>(`/tasks/${id(taskId)}/assist`,actorId,'POST',{answers,previous_questions:previousQuestions}),
  updateCard:(actorId:string,taskId:string,card:CardData,revision:number)=>request<Task>(`/tasks/${id(taskId)}/card`,actorId,'PUT',{card,expected_revision:revision}),
  confirmTask:(actorId:string,taskId:string,revision:number)=>request<Task>(`/tasks/${id(taskId)}/confirm`,actorId,'POST',{expected_revision:revision}),
  publishTask:(actorId:string,taskId:string,revision:number)=>request<Task>(`/tasks/${id(taskId)}/publish`,actorId,'POST',{expected_revision:revision}),
