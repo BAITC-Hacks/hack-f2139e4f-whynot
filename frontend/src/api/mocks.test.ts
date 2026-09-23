@@ -29,3 +29,23 @@ describe('Поведение демонстрационного API',()=>{
  });
  it('не раскрывает приватную карточку студенту',async()=>{await expect(mockRequest('/tasks/demo-draft-1','student-1')).rejects.toMatchObject({status:403});await expect(mockRequest('/tasks/mine')).rejects.toMatchObject({status:401})});
 });
+
+describe('Профиль бизнеса и история результатов', () => {
+ it('сохраняет профиль и запрещает студенту читать его', async () => {
+  const profile = { company_name:'Кофейня', industry:'Ритейл', description:'Кофе и выпечка', goals:'Сократить списания', values:'Качество', use_history_for_ai:false };
+  await mockRequest('/business/profile','business-1','PUT',profile);
+  expect(await mockRequest('/business/profile','business-1')).toEqual(profile);
+  await expect(mockRequest('/business/profile','student-1')).rejects.toMatchObject({status:403});
+ });
+ it('показывает студенту только свои этапы, а бизнесу серверную страницу задач', async () => {
+  await mockRequest('/proposals/demo-proposal-1/decision','business-1','POST',{decision:'accepted',note:'Начинаем'});
+  await mockRequest('/proposals/demo-proposal-1/milestones','business-1','POST',{code:'prototype',evidence:'Проверена демонстрация'});
+  const own=await mockRequest<import('../types').StudentHistoryPage>('/students/history?limit=20&offset=0','student-1');
+  expect(own.items).toHaveLength(1);expect(own.items[0].milestones[0]).toMatchObject({points:20,evidence:'Проверена демонстрация'});
+  const other=await mockRequest<import('../types').StudentHistoryPage>('/students/history','student-2');
+  expect(other.items.every(item=>item.proposal.team_id==='team-2')).toBe(true);
+  expect(other.items[0].milestones).toEqual([]);
+  const business=await mockRequest<import('../types').BusinessHistoryPage>('/business/history?limit=2&offset=2','business-1');
+  expect(business.total).toBe(10);expect(business.items).toHaveLength(2);expect(business.offset).toBe(2);
+ });
+});

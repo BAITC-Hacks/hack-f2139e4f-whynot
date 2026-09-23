@@ -1,4 +1,4 @@
-import type { Actor, AssistResult, CardData, CardField, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Rating, ScoreItem, Task, TaskCreateInput, Team, TeamInput } from '../types';
+import type { Actor, BusinessProfile, AssistResult, CardData, CardField, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Rating, ScoreItem, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { emptyCard, FIELD_LABELS, MILESTONES } from '../ui/fields';
 import { ApiError } from './errors';
 const clone=<T,>(value:T):T=>structuredClone(value);
@@ -10,14 +10,14 @@ export function mockRating(card:CardData,confirmed:CardField[]):Rating {
  let preview=0;const breakdown:ScoreItem[]=categories.map(category=>{let points=0,max=0;const missing:CardField[]=[],unconfirmed:CardField[]=[];for(const [field,weight] of Object.entries(category.weights) as [CardField,number][]){max+=weight;if(card[field].trim()){preview+=weight;if(confirmed.includes(field))points+=weight;else unconfirmed.push(field)}else missing.push(field)}return {key:category.key,label:category.label,points,max_points:max,missing_fields:missing,unconfirmed_fields:unconfirmed,suggestion:missing.length?`Добавьте: ${missing.map(f=>FIELD_LABELS[f].toLowerCase()).join(', ')}.`:unconfirmed.length?'Проверьте и подтвердите заполненные поля.':'Категория заполнена и подтверждена.'}});
  const score=breakdown.reduce((sum,item)=>sum+item.points,0);return {score,preview_score:preview,readiness:score<40?'draft':score<70?'working':score<90?'ready':'priority',breakdown,missing_fields:fields.filter(f=>!card[f].trim()),unconfirmed_fields:fields.filter(f=>!!card[f].trim()&&!confirmed.includes(f))};
 }
-interface MockStore { actors:Actor[];tasks:Task[];catalog:CatalogTask[];teams:Team[];proposals:Proposal[];milestones:Milestone[] }
+interface MockStore { profiles:Record<string,BusinessProfile>;actors:Actor[];tasks:Task[];catalog:CatalogTask[];teams:Team[];proposals:Proposal[];milestones:Milestone[] }
 function seed():MockStore {
  const actors:Actor[]=[{id:'business-1',name:'Демо-бизнес',role:'business'},...['Импульс','Точка роста','Дельта','Спектр','Орбита'].map((name,i)=>({id:`student-${i+1}`,name,role:'student' as const}))];
  const teams:Team[]=actors.slice(1).map((actor,i)=>({id:`team-${i+1}`,owner_id:actor.id,name:actor.name,interests:[['retail','education','logistics','agriculture','services'][i]],skills:[['Python','React','Аналитика','UX/UI','NLP'][i]],technologies:['Python','React'],points:0}));
  const tasks:Task[]=[],catalog:CatalogTask[]=[];const examples=[['Прогноз спроса для сети кофеен','retail'],['Навигатор стажировок для студентов','education'],['Удобные маршруты для курьеров','logistics'],['Обзор состояния теплицы','agriculture'],['Классификация обращений клиентов','services']];
  const order:CardField[]=['context','need','data','expected_result','success_criteria','constraints','users','contact','interaction_format'];
  examples.forEach(([title,topic],i)=>{const complete:CardData={title,topic,context:`Бизнес хочет улучшить процесс: ${title.toLowerCase()}. Сейчас сотрудники выполняют работу вручную.`,need:'Сократить время ручной работы и уменьшить количество ошибок.',users:'Сотрудники и руководитель направления',data:'CSV за последние 6 месяцев; синтетические примеры предоставим команде.',constraints:'Срок 2 недели. Python, React. Только тестовые данные.',expected_result:'Работающий прототип и короткая инструкция.',success_criteria:'Не менее 16 верных результатов на 20 согласованных тестовых примерах.',contact:'business@example.com',interaction_format:'Созвон раз в неделю и обратная связь в течение двух дней.'};const card=emptyCard(topic);card.title=title;order.slice(0,[2,4,6,7,9][i]).forEach(f=>card[f]=complete[f]);const confirmed=fields.filter(f=>!!card[f]);const task:Task={id:`demo-task-${i+1}`,owner_id:'business-1',raw_description:complete.context,card,revision:1,confirmed_revision:1,published_revision:1,confirmed_fields:confirmed,status:'published',rating:mockRating(card,confirmed),created_at:now()};tasks.push(task);catalog.push({id:task.id,card:clone(card),revision:1,rating:clone(task.rating),published_at:now()});const draftCard=emptyCard(topic);draftCard.title=title;tasks.push({...clone(task),id:`demo-draft-${i+1}`,card:draftCard,confirmed_fields:[],confirmed_revision:null,published_revision:null,status:'draft',rating:mockRating(draftCard,[])})});
- const proposals:Proposal[]=teams.map((team,i)=>({id:`demo-proposal-${i+1}`,task_id:`demo-task-${i+1}`,team_id:team.id,idea:'Соберём прототип и проверим решение на предоставленных тестовых данных.',plan:'Уточнение задачи → изучение данных → прототип → демонстрация.',timeline:'2 недели',prototype_url:'https://example.com/prototype',status:'pending',decision_note:'',created_at:now(),decided_at:null}));return {actors,tasks,catalog,teams,proposals,milestones:[]};
+ const proposals:Proposal[]=teams.map((team,i)=>({id:`demo-proposal-${i+1}`,task_id:`demo-task-${i+1}`,team_id:team.id,idea:'Соберём прототип и проверим решение на предоставленных тестовых данных.',plan:'Уточнение задачи → изучение данных → прототип → демонстрация.',timeline:'2 недели',prototype_url:'https://example.com/prototype',status:'pending',decision_note:'',created_at:now(),decided_at:null}));return {profiles:{},actors,tasks,catalog,teams,proposals,milestones:[]};
 }
 let store=seed();
 export function resetMocks(){store=seed()}
@@ -30,6 +30,26 @@ function nonempty(text:unknown,max=8000){if(typeof text!=='string'||!text.trim()
 function route(path:string,actorId:string|undefined,method:string,body:unknown):unknown {
  const url=new URL(path,'http://mock');const parts=url.pathname.split('/').filter(Boolean).map(decodeURIComponent);const input=(body??{}) as Record<string,unknown>;
  if(path==='/demo/actors')return store.actors;
+ if(parts[0]==='ai'&&parts[1]==='transcribe')fail('Голосовой ввод доступен при подключении к серверу. Введите описание текстом.','AI_NOT_CONFIGURED',503);
+ const paginate=<T,>(items:T[])=>{const limit=Math.min(100,Math.max(1,Number(url.searchParams.get('limit')||20)));const offset=Math.max(0,Number(url.searchParams.get('offset')||0));return{items:items.slice(offset,offset+limit),total:items.length,limit,offset}};
+ if(parts[0]==='business'){
+  const actor=requireActor(actorId,'business');
+  if(parts[1]==='profile'){
+   if(method==='PUT'){
+    const profile=body as BusinessProfile;
+    for(const field of ['company_name','industry','description','goals','values'] as const){const max=field==='company_name'?200:field==='industry'?100:4000;if(typeof profile[field]!=='string'||profile[field].length>max)fail('Проверьте длину полей профиля.','VALIDATION_ERROR',422)}
+    if(typeof profile.use_history_for_ai!=='boolean')fail('Проверьте настройку истории.','VALIDATION_ERROR',422);
+    store.profiles[actor.id]=clone(profile);
+   }
+   return store.profiles[actor.id]||{company_name:actor.name,industry:'',description:'',goals:'',values:'',use_history_for_ai:true};
+  }
+  if(parts[1]==='history')return paginate(store.tasks.filter(t=>t.owner_id===actor.id).sort((a,b)=>b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id)).map(task=>({task,proposals:store.proposals.filter(p=>p.task_id===task.id).map(proposal=>({...proposal,milestones:store.milestones.filter(m=>m.proposal_id===proposal.id)}))})));
+ }
+ if(parts[0]==='students'&&parts[1]==='history'){
+  const team=teamFor(actorId);
+  return paginate(store.proposals.filter(p=>p.team_id===team.id).sort((a,b)=>b.created_at.localeCompare(a.created_at)).map(proposal=>{const task=store.catalog.find(t=>t.id===proposal.task_id)!;return{task:{id:task.id,title:task.card.title,topic:task.card.topic},proposal,milestones:store.milestones.filter(m=>m.proposal_id===proposal.id)}}));
+ }
+
  if(parts[0]==='catalog'){
   if(parts[1]){const item=store.catalog.find(t=>t.id===parts[1]);return item||fail('Опубликованная задача не найдена.','TASK_NOT_FOUND',404)}
   const topic=url.searchParams.get('topic'),readiness=url.searchParams.get('readiness'),limit=Number(url.searchParams.get('limit')||20),offset=Number(url.searchParams.get('offset')||0);const items=store.catalog.filter(t=>(!topic||t.card.topic===topic)&&(!readiness||t.rating.readiness===readiness)).sort((a,b)=>b.rating.score-a.rating.score||b.published_at.localeCompare(a.published_at));return {items:items.slice(offset,offset+limit),total:items.length,limit,offset};

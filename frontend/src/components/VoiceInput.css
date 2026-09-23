@@ -1,0 +1,11 @@
+.voice-input{display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--canvas)}
+.voice-input p{margin:0}
+.voice-input-heading{display:flex;align-items:center;gap:8px}
+.voice-input-heading h3{margin:0;font-size:15px}
+.voice-input-note{font-size:13px;line-height:1.65;color:var(--muted)}
+.voice-recording-status{display:flex;align-items:center;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.voice-recording-status>span{width:8px;height:8px;border-radius:50%;background:#b3412e}
+.voice-file{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:white;font-size:13px}
+.voice-file>span{min-width:0;overflow-wrap:anywhere;flex:1 1 160px}
+.voice-transcript{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:14px}
+@media(max-width:600px){.voice-input{padding:14px}.voice-input .form-actions{gap:8px}.voice-input .button{white-space:normal;text-align:left}}

@@ -1,27 +1,72 @@
-import type { Actor, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
+import type { Actor, AuthSession, BusinessHistoryPage, BusinessProfile, LoginInput, MessageResult, Question, RegisterInput, StudentHistoryPage, TranscriptionResult, AssistResult, CardData, CardField, CatalogFilters, CatalogPage, CatalogTask, Milestone, MilestoneCode, Proposal, ProposalInput, Task, TaskCreateInput, Team, TeamInput } from '../types';
 import { ApiError } from './errors';
 export { ApiError, errorMessage } from './errors';
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/$/,'')}/api/v1` : 'http://127.0.0.1:8000/api/v1')).replace(/\/$/,'');
-const messages:Record<string,string>={STALE_REVISION:'Карточка была изменена. Загрузите актуальную версию и сравните её со своими правками.',CONFIRMATION_REQUIRED:'Сначала подтвердите текущую редакцию карточки.',TEAM_REQUIRED:'Создайте профиль команды, чтобы отправлять предложения.',DECISION_FINAL:'Решение по этому отклику уже принято. Его нельзя изменить.',TEAM_NOT_SELECTED:'Подтверждать этапы можно только у принятых предложений.',MILESTONE_EXISTS:'Этот этап уже подтверждён с другим описанием результата.',ACTOR_REQUIRED:'Выберите демо-пользователя в шапке.',BUSINESS_REQUIRED:'Это действие доступно только бизнесу.',STUDENT_REQUIRED:'Это действие доступно только команде.',AUTH_NOT_CONFIGURED:'Демо-вход выключен на сервере. Обратитесь к владельцу backend.',CARD_LABELS_REQUIRED:'Укажите название задачи и тему перед публикацией.',VALIDATION_ERROR:'Проверьте обязательные поля, длину текста и корректность ссылки.',TASK_NOT_FOUND:'Задача не найдена или недоступна выбранному пользователю.',PROPOSAL_NOT_FOUND:'Отклик не найден или недоступен выбранному пользователю.'};
-async function request<T>(path:string,actorId?:string,method='GET',body?:unknown):Promise<T>{
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/$/,'')}/api/v1` : '/api/v1')).replace(/\/$/,'');
+const messages:Record<string,string>={LOGIN_REQUIRED:'Сессия завершена. Войдите в аккаунт снова.',INVALID_CREDENTIALS:'Неверный email или пароль.',RATE_LIMITED:'Слишком много запросов. Подождите немного и попробуйте снова.',STALE_REVISION:'Карточка была изменена. Загрузите актуальную версию и сравните её со своими правками.',CONFIRMATION_REQUIRED:'Сначала подтвердите текущую редакцию карточки.',TEAM_REQUIRED:'Создайте профиль команды, чтобы отправлять предложения.',DECISION_FINAL:'Решение по этому отклику уже принято. Его нельзя изменить.',TEAM_NOT_SELECTED:'Подтверждать этапы можно только у принятых предложений.',MILESTONE_EXISTS:'Этот этап уже подтверждён с другим описанием результата.',ACTOR_REQUIRED:'Выберите демо-пользователя в шапке.',BUSINESS_REQUIRED:'Это действие доступно только бизнесу.',STUDENT_REQUIRED:'Это действие доступно только команде.',AUTH_NOT_CONFIGURED:'Демо-вход выключен на сервере. Обратитесь к владельцу backend.',CARD_LABELS_REQUIRED:'Укажите название задачи и тему перед публикацией.',VALIDATION_ERROR:'Проверьте обязательные поля, длину текста и корректность ссылки.',TASK_NOT_FOUND:'Задача не найдена или недоступна выбранному пользователю.',PROPOSAL_NOT_FOUND:'Отклик не найден или недоступен выбранному пользователю.'};
+const sessionExpiredListeners = new Set<() => void>();
+let sessionVersion = 0;
+// Account changes discovered by /auth/me also make prior responses obsolete.
+// This only advances the request epoch; it never logs out the new account.
+export function invalidateSessionRequests() { sessionVersion++; }
+export function subscribeSessionExpired(listener: () => void) {
+ sessionExpiredListeners.add(listener);
+ return () => { sessionExpiredListeners.delete(listener); };
+}
+async function request<T>(path:string,actorId?:string,method='GET',body?:unknown,timeoutMs=45000):Promise<T>{
  if(USE_MOCKS){try{const {mockRequest}=await import('./mocks');return await mockRequest<T>(path,actorId,method,body)}catch(error){throw error instanceof ApiError?error:new ApiError('Не удалось обработать запрос в мок-режиме.')}}
- const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),45000);
+ const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),timeoutMs);
+ const requestSessionVersion=sessionVersion;
+ const multipart=body instanceof FormData;
  try {
-  const response=await fetch(API_BASE_URL+path,{method,headers:{Accept:'application/json',...(body!==undefined?{'Content-Type':'application/json'}:{}),...(actorId?{'X-Actor-ID':actorId}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:abort.signal});
+  // A different tab can replace the shared cookie while this form still shows the old account.
+  if(actorId&&method!=='GET'){
+   let current:AuthSession;
+   try{current=await request<AuthSession>('/auth/me')}
+   catch(error){
+    if(error instanceof ApiError&&error.code==='LOGIN_REQUIRED'&&requestSessionVersion===sessionVersion){sessionVersion++;sessionExpiredListeners.forEach(listener=>listener())}
+    throw error;
+   }
+   if(current.actor.id!==actorId||requestSessionVersion!==sessionVersion){
+    if(requestSessionVersion===sessionVersion){sessionVersion++;sessionExpiredListeners.forEach(listener=>listener())}
+    throw new ApiError('Аккаунт изменился в другой вкладке. Обновите страницу перед сохранением.','SESSION_CHANGED',401);
+   }
+  }
+  const response=await fetch(API_BASE_URL+path,{method,credentials:'include',headers:{Accept:'application/json',...(body!==undefined&&!multipart?{'Content-Type':'application/json'}:{})},body:body===undefined?undefined:multipart?body:JSON.stringify(body),signal:abort.signal});
   let payload:unknown;try{payload=await response.json()}catch{throw new ApiError('Сервер вернул некорректный ответ. Проверьте адрес API.','INVALID_RESPONSE',response.status)}
-  if(!response.ok){const details=(payload as {error?:{code?:string;message?:string}})?.error;const code=details?.code||'REQUEST_FAILED';const text=messages[code]||(details?.message&&/[А-Яа-яЁё]/.test(details.message)?details.message:`Не удалось выполнить запрос (код ${response.status}). Попробуйте ещё раз.`);throw new ApiError(text,code,response.status)}
+  if(!response.ok){
+   const details=(payload as {error?:{code?:string;message?:string}})?.error;
+   const code=details?.code||'REQUEST_FAILED';
+   if(response.status===401&&code==='LOGIN_REQUIRED'&&!path.startsWith('/auth/')&&requestSessionVersion===sessionVersion){
+    sessionVersion++;
+    sessionExpiredListeners.forEach(listener=>listener());
+   }
+   const text=messages[code]||(details?.message&&/[А-Яа-яЁё]/.test(details.message)?details.message:`Не удалось выполнить запрос (код ${response.status}). Попробуйте ещё раз.`);
+   throw new ApiError(text,code,response.status);
+  }
+  if(['/auth/login','/auth/register','/auth/logout','/auth/reset-password'].includes(path))sessionVersion++;
   return payload as T;
  } catch(error){if(error instanceof ApiError)throw error;if(error instanceof DOMException&&error.name==='AbortError')throw new ApiError('Сервер отвечает слишком долго. Попробуйте ещё раз.','TIMEOUT');throw new ApiError('Нет соединения с сервером. Проверьте, что backend запущен, и повторите запрос.','NETWORK_ERROR')}
  finally{clearTimeout(timeout)}
 }
 const id=(value:string)=>encodeURIComponent(value);
 export const api={
+ getSession:()=>request<AuthSession>('/auth/me'),
+ register:(input:RegisterInput)=>request<AuthSession>('/auth/register',undefined,'POST',input),
+ login:(input:LoginInput)=>request<AuthSession>('/auth/login',undefined,'POST',input),
+ logout:()=>request<MessageResult>('/auth/logout',undefined,'POST'),
+ forgotPassword:(email:string)=>request<MessageResult>('/auth/forgot-password',undefined,'POST',{email}),
+ resetPassword:(token:string,password:string)=>request<MessageResult>('/auth/reset-password',undefined,'POST',{token,password}),
+ getBusinessProfile:(actorId:string)=>request<BusinessProfile>('/business/profile',actorId),
+ saveBusinessProfile:(actorId:string,profile:BusinessProfile)=>request<BusinessProfile>('/business/profile',actorId,'PUT',profile),
+ getBusinessHistory:(actorId:string,limit=20,offset=0)=>request<BusinessHistoryPage>(`/business/history?limit=${limit}&offset=${offset}`,actorId),
+ getStudentHistory:(actorId:string,limit=20,offset=0)=>request<StudentHistoryPage>(`/students/history?limit=${limit}&offset=${offset}`,actorId),
+ transcribeAudio:(actorId:string,file:File)=>{const data=new FormData();data.append('file',file);return request<TranscriptionResult>('/ai/transcribe',actorId,'POST',data,75000)},
  getActors:()=>request<Actor[]>('/demo/actors'),
  createTask:(actorId:string,input:TaskCreateInput)=>request<Task>('/tasks',actorId,'POST',input),
  getMyTasks:(actorId:string)=>request<Task[]>('/tasks/mine',actorId),
  getTask:(actorId:string,taskId:string)=>request<Task>(`/tasks/${id(taskId)}`,actorId),
- assistTask:(actorId:string,taskId:string,answers:Partial<Record<CardField,string>>={})=>request<AssistResult>(`/tasks/${id(taskId)}/assist`,actorId,'POST',{answers}),
+ assistTask:(actorId:string,taskId:string,answers:Partial<Record<CardField,string>>={},previousQuestions:Question[]=[])=>request<AssistResult>(`/tasks/${id(taskId)}/assist`,actorId,'POST',{answers,previous_questions:previousQuestions.slice(-40)},150000),
  updateCard:(actorId:string,taskId:string,card:CardData,revision:number)=>request<Task>(`/tasks/${id(taskId)}/card`,actorId,'PUT',{card,expected_revision:revision}),
  confirmTask:(actorId:string,taskId:string,revision:number)=>request<Task>(`/tasks/${id(taskId)}/confirm`,actorId,'POST',{expected_revision:revision}),
  publishTask:(actorId:string,taskId:string,revision:number)=>request<Task>(`/tasks/${id(taskId)}/publish`,actorId,'POST',{expected_revision:revision}),
